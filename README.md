@@ -16,3 +16,9 @@ Immersive 3D website concept for The Yellow Fisherman (Ram Lane, Ashford, Kent).
 - Steam, embers and lamp bloom: Three.js overlay (main.js `fx`).
 - "Wrap it up" opens the same order form; leads go to leads.js / dashboard.html as before.
 - Imagery is illustrative; swap media/ for the shop's own photos/footage before launch.
+
+## v3: walk-in first (Nov 2026)
+- The site opens on the street; one continuous 12s cinematic take (push-in, door, threshold bloom, fryers, macro pass over the cod, settle at the counter).
+- media/walk-1080.mp4 (desktop) / walk-720.mp4 (phones): every frame a keyframe (-g 1) so scroll-scrubbing is exact; "Walk in" plays it natively and the scroll follows the video.
+- Lenis smooth scroll site-wide; synthesised street → door chime → fryer sizzle sound; floating menus arrive as the destination.
+- Greybox previz (lab/greybox*.html, not deployed) was used to plan the camera path.

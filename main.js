@@ -8,9 +8,19 @@ const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
 const gbp = n => '£' + n.toFixed(2);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const narrow = () => innerWidth < 900;
+const MOBILE = narrow() || matchMedia('(pointer:coarse)').matches;
 const loaderBar = $('#loader .bar i');
 loaderBar.style.width = '25%';
+if (MOBILE) document.documentElement.classList.add('lite');
+
+/* ---------------- smooth scroll (Lenis) driven by GSAP's ticker ---------------- */
+const lenis = new window.Lenis({ lerp: reduce ? 1 : 0.085, smoothWheel: !reduce, wheelMultiplier: 0.9, touchMultiplier: 1.4 });
+lenis.on('scroll', ScrollTrigger.update);
+gsap.ticker.add(t => lenis.raf(t * 1000));
+gsap.ticker.lagSmoothing(0);
+const goY = (y, o = {}) => lenis.scrollTo(y, { duration: 1.6, easing: t => 1 - Math.pow(1 - t, 4), ...o });
 
 /* ---------------- static content ---------------- */
 $$('[data-tel]').forEach(a => a.href = 'tel:' + BIZ.phoneTel);
@@ -28,170 +38,220 @@ const todayIdx = (new Date().getDay() + 6) % 7;
 $('#menuGrid').innerHTML = MENU_LIST.map(([g, items]) => `<div class="mg"><h4>${g}</h4>` + items.map(([n, p]) => `<div class="mi"><span>${n}</span><i></i><b>${gbp(p)}</b></div>`).join('') + '</div>').join('');
 $('#cards').innerHTML = REVIEWS.map(r => `<div class="card"><div class="q">“</div><p>${r.q}</p><cite>${r.who} · ${r.src}</cite></div>`).join('');
 
-/* ---------------- sound + haptics (synthesised, no files) ---------------- */
-let actx = null, muted = localStorage.getItem('yf_mute') === '1';
+/* ---------------- sound: street ambience → door chime → fryer sizzle (synthesised) ---------------- */
+let actx = null, muted = localStorage.getItem('yf_mute') === '1', amb = null;
 const sndBtn = $('#sndBtn');
 const paintSnd = () => { sndBtn.textContent = muted ? '🔇' : '🔈'; sndBtn.setAttribute('aria-pressed', String(!muted)); };
 paintSnd();
-sndBtn.onclick = () => { muted = !muted; localStorage.setItem('yf_mute', muted ? '1' : '0'); paintSnd(); if (!muted) blip('pop'); };
 function ac() { if (!actx) { try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } } if (actx.state === 'suspended') actx.resume(); return actx; }
+function noiseBuf(c, secs, fn) { const b = c.createBuffer(1, c.sampleRate * secs, c.sampleRate), d = b.getChannelData(0); let last = 0; for (let i = 0; i < d.length; i++) { const w = Math.random() * 2 - 1; d[i] = fn(w, i, d.length, last); last = d[i]; } return b; }
+function startAmbience() {
+  const c = ac(); if (!c || amb) return;
+  const master = c.createGain(); master.gain.value = muted ? 0 : 1; master.connect(c.destination);
+  const loop = (buf, filt, f, q) => { const s = c.createBufferSource(); s.buffer = buf; s.loop = true; const fl = c.createBiquadFilter(); fl.type = filt; fl.frequency.value = f; if (q) fl.Q.value = q; const g = c.createGain(); g.gain.value = 0; s.connect(fl); fl.connect(g); g.connect(master); s.start(); return g; };
+  const street = loop(noiseBuf(c, 4, (w, i, n, l) => (l + 0.02 * w) / 1.02), 'lowpass', 520);            // distant traffic rumble
+  const sizzle = loop(noiseBuf(c, 3, (w) => w * (Math.random() < 0.012 ? 1 : 0.18)), 'bandpass', 4200, 0.7); // fryer crackle
+  const room = loop(noiseBuf(c, 4, (w, i, n, l) => (l + 0.05 * w) / 1.05), 'bandpass', 380, 0.6);        // warm room tone
+  amb = { master, street, sizzle, room };
+}
+function setAmb(vp) {
+  if (!amb) return; const t = actx.currentTime;
+  amb.street.gain.setTargetAtTime(0.5 * (1 - sstep(0.3, 0.45, vp)), t, 0.12);
+  amb.sizzle.gain.setTargetAtTime(0.13 * sstep(0.4, 0.55, vp) * (1 - 0.35 * sstep(0.8, 1, vp)), t, 0.2);
+  amb.room.gain.setTargetAtTime(0.35 * sstep(0.38, 0.55, vp), t, 0.2);
+}
 function blip(kind) {
   if (muted) return; const c = ac(); if (!c) return; const t = c.currentTime;
   const g = c.createGain(); g.connect(c.destination);
   if (kind === 'pop') {
     const o = c.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(520, t); o.frequency.exponentialRampToValueAtTime(1250, t + 0.09);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.16, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.14, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
     o.connect(g); o.start(t); o.stop(t + 0.16);
   } else if (kind === 'land') {
-    const n = c.createBuffer(1, c.sampleRate * 0.18, c.sampleRate), d = n.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 3);
-    const s = c.createBufferSource(); s.buffer = n; const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400;
-    g.gain.value = 0.22; s.connect(f); f.connect(g); s.start(t);
+    const s = c.createBufferSource(); s.buffer = noiseBuf(c, 0.18, (w, i, n) => w * Math.pow(1 - i / n, 3)); const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1400;
+    g.gain.value = 0.2; s.connect(f); f.connect(g); s.start(t);
     const o = c.createOscillator(), g2 = c.createGain(); o.frequency.setValueAtTime(170, t); o.frequency.exponentialRampToValueAtTime(70, t + 0.12);
-    g2.gain.setValueAtTime(0.25, t); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); o.connect(g2); g2.connect(c.destination); o.start(t); o.stop(t + 0.18);
+    g2.gain.setValueAtTime(0.22, t); g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.16); o.connect(g2); g2.connect(c.destination); o.start(t); o.stop(t + 0.18);
+  } else if (kind === 'chime') { // shop-door bell
+    [[1318, 0.12], [1976, 0.07], [2637, 0.04]].forEach(([f, v], k) => { const o = c.createOscillator(), gg = c.createGain(); o.frequency.value = f; gg.gain.setValueAtTime(0.0001, t + k * 0.11); gg.gain.exponentialRampToValueAtTime(v, t + k * 0.11 + 0.01); gg.gain.exponentialRampToValueAtTime(0.0001, t + k * 0.11 + 1.6); o.connect(gg); gg.connect(c.destination); o.start(t + k * 0.11); o.stop(t + k * 0.11 + 1.7); });
+  } else if (kind === 'whoosh') {
+    const s = c.createBufferSource(); s.buffer = noiseBuf(c, 0.9, (w, i, n) => w * Math.sin(Math.PI * i / n)); const f = c.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 1.2;
+    f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2400, t + 0.8); g.gain.value = 0.16; s.connect(f); f.connect(g); s.start(t);
   } else if (kind === 'wrap') {
-    const n = c.createBuffer(1, c.sampleRate * 0.5, c.sampleRate), d = n.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (0.4 + 0.6 * Math.random() * Math.sin(i / d.length * Math.PI));
-    const s = c.createBufferSource(); s.buffer = n; const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.8;
+    const s = c.createBufferSource(); s.buffer = noiseBuf(c, 0.5, (w, i, n) => w * (0.4 + 0.6 * Math.random() * Math.sin(i / n * Math.PI))); const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 3200; f.Q.value = 0.8;
     g.gain.setValueAtTime(0.12, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5); s.connect(f); f.connect(g); s.start(t);
   }
 }
+sndBtn.onclick = () => { muted = !muted; localStorage.setItem('yf_mute', muted ? '1' : '0'); paintSnd(); startAmbience(); if (amb) amb.master.gain.setTargetAtTime(muted ? 0 : 1, actx.currentTime, 0.1); if (!muted) blip('pop'); };
+addEventListener('pointerdown', () => { if (!muted) startAmbience(); }, { once: true });
 const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
 
-/* ---------------- hero ---------------- */
-const vid = $('#heroVid');
-vid.src = narrow() ? 'media/hero-fryer-sm.mp4' : 'media/hero-fryer.mp4';
-vid.play().catch(() => {});
+/* ---------------- the walk-in: one continuous 1080p dolly shot ---------------- */
+// Every frame is a keyframe (ffmpeg -g 1), so scrubbing is exact; "Walk in" plays it natively at 24fps
+// and the scroll position follows the video, which is the smoothest possible path.
+const vid = $('#walkVid'), poster = $('#walkPoster'), stage = $('#walkStage'), cam = $('#cam');
+const SRC = MOBILE ? { v: 'media/walk-720.mp4', p: 'media/street-sm.webp', end: 'media/counter-sm.webp' } : { v: 'media/walk-1080.mp4', p: 'media/street.webp', end: 'media/counter.webp' };
+poster.src = SRC.p; vid.src = SRC.v; vid.load();
+const V_END = 0.84; // share of the walk section spent walking; the rest is standing at the counter
+let dur = 12.04, vCur = 0, autoplay = false, vp = 0, lastVp = -1, arrived = false, chimed = false, whooshed = false;
+vid.addEventListener('loadedmetadata', () => { dur = vid.duration || dur; });
+vid.addEventListener('loadeddata', () => { poster.classList.add('gone'); });
+const walkEl = $('#walk');
+const walkRange = () => walkEl.offsetHeight - innerHeight;
+const arriveY = () => walkEl.offsetTop + walkRange() * V_END + 2;
+const walkP = () => clamp((scrollY - walkEl.offsetTop) / walkRange(), 0, 1);
 
-/* ---------------- loader ---------------- */
+// loader: show the street as soon as its still is decoded
 let loaded = false;
 function finishLoad() {
-  if (loaded) return; loaded = true;
-  loaderBar.style.width = '100%';
-  setTimeout(() => $('#loader').classList.add('done'), 300);
+  if (loaded) return; loaded = true; loaderBar.style.width = '100%';
+  setTimeout(() => $('#loader').classList.add('done'), 250);
   if (!reduce) {
-    gsap.from('.hero .mega span', { yPercent: 115, opacity: 0, stagger: 0.12, duration: 1.1, ease: 'power4.out', delay: 0.35 });
-    gsap.from('.hero .kicker, .hero .sub, .hero-cta, .rating-chip', { y: 24, opacity: 0, stagger: 0.08, duration: 0.8, ease: 'power3.out', delay: 0.7 });
+    gsap.from('.intro .mega span', { yPercent: 110, opacity: 0, stagger: 0.12, duration: 1.4, ease: 'expo.out', delay: 0.35 });
+    gsap.from('.intro .kicker, .intro-cta, .rating-chip, .walk-ui', { y: 24, opacity: 0, stagger: 0.08, duration: 1.1, ease: 'power3.out', delay: 0.6 });
+    gsap.fromTo(cam, { scale: 1.08 }, { scale: 1, duration: 2.6, ease: 'power3.out', clearProps: 'scale' });
   }
-  setTimeout(loadWalk, 400);
 }
-{
-  const poster = new Image(); poster.src = 'media/hero-poster.webp';
-  const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
-  Promise.all([new Promise(r => { poster.onload = poster.onerror = r; }), fonts]).then(() => { loaderBar.style.width = '70%'; setTimeout(finishLoad, 250); });
-  setTimeout(finishLoad, 3500);
+{ const im = new Image(); im.src = SRC.p; im.decode().catch(() => {}).then(() => { loaderBar.style.width = '70%'; setTimeout(finishLoad, 200); }); setTimeout(finishLoad, 3500); }
+
+const thr = $('#threshold'), intro = $('#intro'), walkUi = $('#walkUi'), progBar = $('#progBar'), bloom = $('.threshold .bloom'), leak = $('.threshold .leak'), wlines = $$('.wline'), vign = $('.walk-vignette');
+const setIntro = gsap.quickSetter(intro, 'css'), setCam = gsap.quickSetter(cam, 'css');
+let lastT = performance.now();
+function walkTick() {
+  const now = performance.now(), dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  const p = walkP();
+  if (autoplay) {
+    vCur = vid.currentTime;
+    const y = walkEl.offsetTop + walkRange() * V_END * (vCur / dur);
+    lenis.scrollTo(y, { immediate: true, force: true });
+    if (vid.ended || vCur >= dur - 0.06) endAutoplay(true);
+  } else {
+    const target = clamp(p / V_END, 0, 1) * dur;
+    vCur += (target - vCur) * (1 - Math.exp(-dt * 9));
+    if (Math.abs(target - vCur) < 0.004) vCur = target;
+    if (vid.readyState >= 2 && !vid.seeking && Math.abs(vid.currentTime - vCur) > 0.5 / 24) vid.currentTime = Math.min(vCur, dur - 0.04);
+  }
+  vp = clamp(vCur / dur, 0, 1);
+  if (Math.abs(vp - lastVp) > 0.0005) {
+    lastVp = vp;
+    // intro copy drifts away as the walk starts
+    const io = 1 - sstep(0.0, 0.07, vp); setIntro({ opacity: io, y: -60 * (1 - io), pointerEvents: io < 0.3 ? 'none' : 'auto' });
+    walkUi.style.opacity = String(1 - sstep(0.75, 0.9, vp)); progBar.style.transform = `scaleX(${vp})`;
+    // the threshold: bloom, light leak, a touch of push and (desktop) motion blur as we cross the door
+    const k = Math.exp(-Math.pow((vp - 0.403) / 0.04, 2)); // door threshold ≈ 4.85s of 12s
+    thr.style.visibility = k < 0.01 ? 'hidden' : 'visible'; bloom.style.opacity = String(k * 0.85); leak.style.opacity = String(k * 0.7); leak.style.transform = `translate3d(${(vp - 0.403) * -900}%,0,0) rotate(12deg)`;
+    setCam({ scale: 1 + 0.035 * k, filter: MOBILE || k < 0.05 ? 'none' : `blur(${(k * 1.4).toFixed(2)}px)` });
+    vign.style.opacity = String(1 - 0.35 * k);
+    wlines.forEach(el => el.classList.toggle('on', vp >= +el.dataset.a && vp < +el.dataset.b));
+    if (vp > 0.355 && !whooshed) { whooshed = true; blip('whoosh'); } if (vp < 0.3) whooshed = false;
+    if (vp > 0.385 && !chimed) { chimed = true; blip('chime'); buzz(10); } if (vp < 0.32) chimed = false;
+    setAmb(vp);
+    if (vp > 0.5) preloadDishes();
+  }
+  const at = p >= V_END - 0.004 && vp > 0.985;
+  if (at !== arrived) { arrived = at; arrive(at); }
+}
+gsap.ticker.add(walkTick);
+
+function startAutoplay() {
+  if (reduce) { goY(arriveY(), { duration: 0.01 }); return; }
+  startAmbience(); blip('pop');
+  const p = walkP(); if (p >= V_END) return;
+  if (vid.readyState < 2) { goY(arriveY(), { duration: 9, easing: t => t }); return; }
+  vid.currentTime = vCur; autoplay = true; document.body.classList.add('autowalk');
+  vid.play().catch(() => { autoplay = false; goY(arriveY(), { duration: 9, easing: t => t }); });
+}
+function endAutoplay(done) {
+  if (!autoplay) return; autoplay = false; vid.pause(); document.body.classList.remove('autowalk');
+  if (done) { vCur = dur; lenis.scrollTo(arriveY(), { immediate: true, force: true }); }
+}
+['wheel', 'touchstart', 'keydown'].forEach(ev => addEventListener(ev, () => { if (autoplay) endAutoplay(false); }, { passive: true }));
+$('#walkBtn').onclick = startAutoplay;
+stage.addEventListener('click', e => { if (vp < 0.02 && !e.target.closest('a,button,.counter')) startAutoplay(); });
+$('#navOrder').onclick = e => { e.preventDefault(); if (walkP() < 0.05) startAutoplay(); else goY(arriveY()); };
+
+/* ---------------- arriving: the floating menus are the destination ---------------- */
+const counter = $('#counter');
+let arriveTl = null;
+const makeArrive = () => gsap.timeline({ paused: true, defaults: { ease: 'expo.out' } })
+  .fromTo('.counter-head', { y: 40, opacity: 0 }, { y: 0, opacity: 1, duration: 1.2 }, 0)
+  .fromTo('.panel-in', { y: 90, z: 0, opacity: 0, scale: 0.86, rotationX: 18 }, { y: 0, opacity: 1, scale: 1, rotationX: 0, duration: 1.5, stagger: 0.07 }, 0.1)
+  .fromTo('.ring-nav', { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 1 }, 0.5)
+  .fromTo('#trayWrap', { y: 120, opacity: 0 }, { y: 0, opacity: 1, duration: 1.3 }, 0.35);
+function arrive(on) {
+  counter.classList.toggle('live', on); document.body.classList.toggle('at-counter', on);
+  if (!arriveTl) arriveTl = makeArrive();
+  if (on) { arriveTl.timeScale(1).play(); fx.start(); layoutRing(); } else { arriveTl.timeScale(2.2).reverse(); fx.stop(); }
 }
 
-/* ---------------- walk-in: scroll-scrubbed photoreal frames ---------------- */
-const N = 97, frames = new Array(N);
-const saveData = navigator.connection && navigator.connection.saveData;
-const prefix = saveData ? 's' : '';
-const wc = $('#walkCanvas'), wctx = wc.getContext('2d');
-let wProg = 0, look = 0, lookT = 0, walkStarted = false;
-function loadWalk() {
-  if (walkStarted) return; walkStarted = true;
-  const order = [0, N - 1]; for (let step = 16; step >= 1; step = step >> 1) for (let i = 0; i < N; i += step) if (!order.includes(i)) order.push(i);
-  let k = 0; const par = 6;
-  const next = () => { if (k >= order.length) return; const i = order[k++]; const im = new Image(); im.decoding = 'async'; im.onload = () => { frames[i] = im; if (i === 0 || Math.abs(i - Math.round(wProg * (N - 1))) < 3) drawWalk(); next(); }; im.onerror = next; im.src = `media/walk/${prefix}${String(i).padStart(3, '0')}.webp`; };
-  for (let j = 0; j < par; j++) next();
-}
-function nearest(i) { for (let d = 0; d < N; d++) { if (frames[i - d]) return frames[i - d]; if (frames[i + d]) return frames[i + d]; } return null; }
-function sizeCanvas(c) { const dpr = Math.min(devicePixelRatio || 1, 2); const r = c.getBoundingClientRect(); const w = Math.round(r.width * dpr), h = Math.round(r.height * dpr); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; } }
-function drawWalk() {
-  const im = nearest(Math.round(wProg * (N - 1))); if (!im) return;
-  sizeCanvas(wc); const W = wc.width, H = wc.height;
-  const s = Math.max(W / im.width, H / im.height) * 1.08; const dw = im.width * s, dh = im.height * s;
-  const x = (W - dw) / 2 - look * (dw - W) / 2 * 0.9, y = (H - dh) / 2;
-  wctx.drawImage(im, x, y, dw, dh);
-}
-ScrollTrigger.create({ trigger: '#walk', start: 'top top', end: 'bottom bottom', scrub: true, onUpdate: st => {
-  wProg = st.progress; drawWalk(); loadWalk();
-  $$('.wline').forEach(el => { const a = +el.dataset.at; el.classList.toggle('on', wProg >= a && wProg < a + 0.24); });
-  $('#hotspot').classList.toggle('gone', wProg > 0.04);
-}});
-addEventListener('resize', () => { drawWalk(); });
-// drag (or mouse) to look around
-{
-  const st = $('#walkStage'); let sx = null, base = 0;
-  st.addEventListener('pointerdown', e => { sx = e.clientX; base = lookT; });
-  addEventListener('pointerup', () => { sx = null; });
-  st.addEventListener('pointermove', e => {
-    if (sx !== null) lookT = clamp(base - (e.clientX - sx) / (innerWidth * 0.5), -1, 1);
-    else if (e.pointerType === 'mouse') lookT = clamp((e.clientX / innerWidth - 0.5) * -0.8, -1, 1);
-  });
-  const tick = () => { const d = lookT - look; if (Math.abs(d) > 0.001) { look += d * 0.12; drawWalk(); } if (sx === null && !matchMedia('(pointer:fine)').matches) lookT *= 0.985; requestAnimationFrame(tick); };
-  requestAnimationFrame(tick);
-}
-// tap-to-walk: glide the whole way in
-function autoWalk() {
-  const target = $('#counter').getBoundingClientRect().top + scrollY - (narrow() ? 0 : 0);
-  const from = scrollY, dist = target - from; if (dist <= 0) return;
-  const p = { y: from };
-  gsap.to(p, { y: target, duration: reduce ? 0.01 : clamp(dist / innerHeight * 1.3, 1.2, 6.5), ease: 'power1.inOut', onUpdate: () => scrollTo(0, p.y) });
-  ac();
-}
-$('#hotspot').onclick = autoWalk;
-$('#walkBtn').onclick = e => { e.preventDefault(); loadWalk(); autoWalk(); };
-
-/* ---------------- counter: floating glass menu panels ---------------- */
+/* ---------------- counter: floating glass menu panels with drag + momentum ---------------- */
 const ITEMS = {}; PANELS.forEach(p => p.items.forEach(it => { ITEMS[it.id] = { ...it, panel: p.id }; }));
 const ring = $('#ring');
 ring.innerHTML = PANELS.map((p, i) => `
-  <div class="panel" data-i="${i}"><div class="bob" style="animation-delay:${-i * 0.7}s"><div class="glass panel-in">
+  <div class="panel" data-i="${i}"><div class="bob" style="animation-delay:${-i * 0.9}s"><div class="glass panel-in">
     <div class="ph"><span class="pn">0${i + 1}</span><h3>${p.title}</h3></div>
     <div class="items">${p.items.map(it => `
       <button class="it" data-id="${it.id}">
-        <span class="th"><img src="media/dish/${it.img}.webp" alt="" loading="lazy"></span>
+        <span class="th"><img src="media/dish/${it.img}.webp" alt="" decoding="async"></span>
         <span class="nm">${it.name}${it.withChips ? `<small>with chips ${gbp(it.withChips)}</small>` : it.note ? `<small>${it.note}</small>` : ''}</span>
         <span class="pr">${gbp(it.price)}</span><span class="plus">+</span>
       </button>`).join('')}</div>
   </div></div></div>`).join('');
 $('#dots').innerHTML = PANELS.map((p, i) => `<button aria-label="${p.title}" data-i="${i}"></button>`).join('');
-const panels = $$('.panel'); let cur = 0; const P = PANELS.length;
+const panels = $$('.panel'); const P = PANELS.length; const rs = { v: 0 }; let cur = 0, PW = 360;
+const measure = () => { PW = panels[0].offsetWidth || 360; };
 function layoutRing() {
-  const W = panels[0].offsetWidth || 340;
+  const spread = narrow() ? 1.0 : 1.02;
   panels.forEach((el, i) => {
     let rel = i - cur; rel = ((rel + P / 2) % P + P) % P - P / 2;
     const a = Math.abs(rel);
-    el.style.transform = `translate3d(${rel * W * (narrow() ? 1.0 : 1.02)}px,0,${-a * W * 0.75}px) rotateY(${-rel * 38}deg)`;
-    el.style.opacity = String(clamp(1.1 - a * (narrow() ? 0.62 : 0.5), 0, 1));
-    el.style.zIndex = String(100 - Math.round(a * 10));
+    el.style.transform = `translate3d(${(rel * PW * spread).toFixed(1)}px,0,${(-a * PW * 0.75).toFixed(1)}px) rotateY(${(-rel * 38).toFixed(2)}deg)`;
+    el.style.opacity = String(clamp(1.1 - a * (narrow() ? 0.62 : 0.5), 0, 1).toFixed(3));
     el.classList.toggle('front', a < 0.5);
   });
   const fi = ((Math.round(cur) % P) + P) % P;
   $$('#dots button').forEach((d, i) => d.classList.toggle('on', i === fi));
 }
-const rs = { v: 0 };
-function goTo(target) { gsap.to(rs, { v: target, duration: reduce ? 0 : 0.6, ease: 'power3.out', onUpdate: () => { cur = rs.v; layoutRing(); } }); }
-$('#prevP').onclick = () => { goTo(Math.round(cur) - 1); blip('pop'); };
-$('#nextP').onclick = () => { goTo(Math.round(cur) + 1); blip('pop'); };
-$$('#dots button').forEach(d => d.onclick = () => { const i = +d.dataset.i; const base = Math.round(cur); let diff = ((i - base) % P + P) % P; if (diff > P / 2) diff -= P; goTo(base + diff); });
-addEventListener('resize', layoutRing);
-layoutRing();
-// swipe / drag to turn the panels
+function glideTo(target, dur = 0.9) { gsap.to(rs, { v: target, duration: reduce ? 0 : dur, ease: 'expo.out', overwrite: true, onUpdate: () => { cur = rs.v; layoutRing(); } }); }
+const nearestIdx = i => { const base = Math.round(cur); let diff = ((i - base) % P + P) % P; if (diff > P / 2) diff -= P; return base + diff; };
+$('#prevP').onclick = () => { glideTo(Math.round(cur) - 1); blip('pop'); };
+$('#nextP').onclick = () => { glideTo(Math.round(cur) + 1); blip('pop'); };
+$$('#dots button').forEach(d => d.onclick = () => glideTo(nearestIdx(+d.dataset.i)));
+addEventListener('resize', () => { measure(); layoutRing(); });
+measure(); layoutRing();
 {
-  const m = $('#menu3d'); let sx = null, sy = 0, start = 0, dragging = false, lastX = 0, vel = 0, lastT = 0;
-  m.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; start = cur; dragging = false; lastX = e.clientX; lastT = performance.now(); vel = 0; gsap.killTweensOf(rs); });
+  const m = $('#menu3d'); let sx = null, sy = 0, start = 0, dragging = false, samples = [];
+  m.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; start = cur; dragging = false; samples = [[performance.now(), e.clientX]]; gsap.killTweensOf(rs); });
   m.addEventListener('pointermove', e => {
     if (sx === null) return; const dx = e.clientX - sx;
-    if (!dragging && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(e.clientY - sy)) { dragging = true; m.setPointerCapture(e.pointerId); }
-    if (dragging) { const W = panels[0].offsetWidth; cur = start - dx / (W * 0.9); rs.v = cur; layoutRing(); const t = performance.now(); vel = (e.clientX - lastX) / Math.max(1, t - lastT); lastX = e.clientX; lastT = t; }
+    if (!dragging && Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(e.clientY - sy)) { dragging = true; try { m.setPointerCapture(e.pointerId); } catch (_) {} }
+    if (dragging) { cur = start - dx / (PW * 0.95); rs.v = cur; layoutRing(); samples.push([performance.now(), e.clientX]); if (samples.length > 6) samples.shift(); }
   });
-  const end = () => { if (sx === null) return; sx = null; if (dragging) { const tgt = Math.round(cur - vel * 0.6); goTo(Math.abs(tgt - start) > 1 ? start + Math.sign(tgt - start) : tgt); blip('pop'); m.dataset.justDragged = '1'; setTimeout(() => delete m.dataset.justDragged, 60); } };
+  const end = () => {
+    if (sx === null) return; sx = null; if (!dragging) return;
+    const [t0, x0] = samples[0], [t1, x1] = samples[samples.length - 1]; const v = (x1 - x0) / Math.max(16, t1 - t0); // px/ms
+    const throwP = -v * 260 / (PW * 0.95); // where momentum would carry the ring
+    let tgt = Math.round(cur + throwP); tgt = clamp(tgt, Math.round(start) - 2, Math.round(start) + 2);
+    glideTo(tgt, clamp(0.7 + Math.abs(tgt - cur) * 0.25, 0.7, 1.4)); blip('pop');
+    m.dataset.justDragged = '1'; setTimeout(() => delete m.dataset.justDragged, 80);
+  };
   m.addEventListener('pointerup', end); m.addEventListener('pointercancel', end);
 }
-// parallax depth: background drifts against the floating glass
-{
-  const bg = $('#counterBg'), m3 = $('#menu3d'); let tx = 0, ty = 0, x = 0, y = 0;
-  addEventListener('pointermove', e => { if (e.pointerType !== 'mouse') return; tx = e.clientX / innerWidth - 0.5; ty = e.clientY / innerHeight - 0.5; });
-  addEventListener('deviceorientation', e => { if (e.gamma == null) return; tx = clamp(e.gamma / 40, -0.5, 0.5); ty = clamp((e.beta - 45) / 60, -0.5, 0.5); });
-  const t = () => { x += (tx - x) * 0.06; y += (ty - y) * 0.06; bg.style.transform = `scale(1.1) translate3d(${-x * 2.2}%, ${-y * 1.6}%, 0)`; m3.style.transform = `translate3d(${x * 14}px, ${y * 8}px, 0) rotateX(${-y * 4}deg) rotateY(${x * 6}deg)`; requestAnimationFrame(t); };
-  if (!reduce) requestAnimationFrame(t);
+// parallax depth on desktop: the glass drifts against the room
+if (!MOBILE && !reduce) {
+  const m3 = $('#menu3d'); const q = { x: 0, y: 0 };
+  const qx = gsap.quickTo(q, 'x', { duration: 1.2, ease: 'power3.out' }), qy = gsap.quickTo(q, 'y', { duration: 1.2, ease: 'power3.out' });
+  addEventListener('pointermove', e => { if (!arrived) return; qx(e.clientX / innerWidth - 0.5); qy(e.clientY / innerHeight - 0.5); });
+  gsap.ticker.add(() => { if (!arrived) return; m3.style.transform = `translate3d(${(q.x * 16).toFixed(2)}px,${(q.y * 10).toFixed(2)}px,0) rotateY(${(q.x * 5).toFixed(2)}deg) rotateX(${(-q.y * 3).toFixed(2)}deg)`; });
 }
+
+// decode every dish before anything flies, so no first-flight hitch
+let dishesReady = null;
+function preloadDishes() { if (dishesReady) return dishesReady; const set = new Set(Object.values(ITEMS).map(i => i.img)); dishesReady = Promise.all([...set].map(n => { const im = new Image(); im.src = `media/dish/${n}.webp`; return im.decode().catch(() => {}); })); return dishesReady; }
 
 /* ---------------- cart + real pricing ---------------- */
 const cart = {}; // id -> qty
-const trayEls = []; // {id, el}
+const trayEls = []; // {id, el, spot}
 const season = new Set(['Salt', 'Vinegar']);
 function priceLines() {
   let chipsLeft = cart.mchips || 0; const out = [];
@@ -226,126 +286,117 @@ $('#lines').onclick = e => {
 $('#orderToggle').onclick = () => { $('#order').classList.toggle('open'); };
 
 const trayItems = $('#trayItems'), trayWrap = $('#trayWrap');
-function landingSpot(it) {
-  // inside the tray opening, lower items further forward
-  const n = trayEls.length;
-  const x = 0.24 + ((n * 0.37 + Math.random() * 0.2) % 1) * 0.56;
-  const y = 0.30 + Math.random() * 0.22;
-  return { x, y, rot: (Math.random() - 0.5) * 34 };
-}
+function landingSpot() { const n = trayEls.length; return { x: 0.24 + ((n * 0.37 + Math.random() * 0.2) % 1) * 0.56, y: 0.30 + Math.random() * 0.22, rot: (Math.random() - 0.5) * 34 }; }
 function placeInTray(id, spot) {
   const it = ITEMS[id]; const el = document.createElement('img');
   el.src = `media/dish/${it.img}.webp`; el.alt = it.name; el.className = 'ti';
-  el.style.left = (spot.x * 100) + '%'; el.style.top = (spot.y * 100) + '%';
-  el.style.width = (it.size * 100) + '%';
-  el.style.setProperty('--r', spot.rot + 'deg'); el.style.zIndex = String(Math.round(spot.y * 100));
-  trayItems.appendChild(el); trayEls.push({ id, el });
+  el.style.left = (spot.x * 100) + '%'; el.style.top = (spot.y * 100) + '%'; el.style.width = (it.size * 100) + '%'; el.style.zIndex = String(Math.round(spot.y * 100));
+  gsap.set(el, { xPercent: -50, yPercent: -70, rotation: spot.rot, transformOrigin: '50% 90%' });
+  trayItems.appendChild(el); trayEls.push({ id, el, spot });
   return el;
 }
 function addItem(id, fromEl) {
   cart[id] = (cart[id] || 0) + 1;
-  const it = ITEMS[id]; const spot = landingSpot(it);
+  const it = ITEMS[id]; const spot = landingSpot();
   const tr = trayWrap.getBoundingClientRect();
-  const finalW = tr.width * it.size;
-  const done = () => {
+  const land = () => {
     const el = placeInTray(id, spot);
-    if (!reduce) { gsap.fromTo(el, { scale: 1.12 }, { scale: 1, duration: 0.35, ease: 'back.out(3)' }); gsap.fromTo(trayWrap, { scaleY: 0.94, scaleX: 1.03 }, { scaleY: 1, scaleX: 1, duration: 0.5, ease: 'elastic.out(1,0.4)' }); }
+    if (!reduce) {
+      // squash on impact, stretch back with a little wobble
+      gsap.fromTo(el, { scaleX: 1.28, scaleY: 0.72 }, { scaleX: 1, scaleY: 1, duration: 0.9, ease: 'elastic.out(1,0.38)' });
+      gsap.fromTo(trayWrap, { scaleY: 0.95, scaleX: 1.03 }, { scaleY: 1, scaleX: 1, duration: 0.9, ease: 'elastic.out(1,0.35)', transformOrigin: '50% 90%' });
+      gsap.fromTo('#total', { scale: 1.3, color: '#ffd21f' }, { scale: 1, color: '#fff', duration: 0.7, ease: 'power3.out' });
+    }
     renderOrder(); blip('land'); buzz(14); fx.puff(tr.left + tr.width * spot.x, tr.top + tr.height * spot.y);
-    if (!reduce) gsap.fromTo('#total', { scale: 1.35, color: '#ffd21f' }, { scale: 1, color: '#fff', duration: 0.5, ease: 'back.out(2)' });
   };
-  if (!fromEl || reduce) { done(); return; }
+  if (!fromEl || reduce) { land(); return; }
   blip('pop'); buzz(8);
   const r = fromEl.getBoundingClientRect();
-  const fly = document.createElement('img'); fly.src = `media/dish/${it.img}.webp`; fly.className = 'fly'; document.body.appendChild(fly);
-  const startW = r.width, popW = Math.min(innerWidth * 0.5, 300) * (0.6 + it.size);
+  const popW = Math.min(innerWidth * 0.5, 300) * (0.6 + it.size), finalW = tr.width * it.size;
+  const fly = document.createElement('img'); fly.src = `media/dish/${it.img}.webp`; fly.className = 'fly'; fly.style.width = popW + 'px'; document.body.appendChild(fly);
   const sx = r.left + r.width / 2, sy = r.top + r.height / 2;
-  const ex = tr.left + tr.width * spot.x, ey = tr.top + tr.height * spot.y;
-  const px = clamp(sx + (narrow() ? 0 : 40), popW / 2, innerWidth - popW / 2), py = Math.max(sy - 90, popW / 2 + 40);
-  const s = { t: 0 };
-  gsap.set(fly, { width: startW, x: sx - startW / 2, y: sy - startW / 2, rotate: 0, opacity: 0.6 });
-  const tl = gsap.timeline({ onComplete: () => { fly.remove(); done(); } });
-  tl.to(fly, { width: popW, x: px - popW / 2, y: py - popW / 2, rotate: -8, opacity: 1, duration: 0.32, ease: 'back.out(1.8)' })
-    .to(fly, { filter: 'drop-shadow(0 30px 40px rgba(0,0,0,.6)) brightness(1.08)', duration: 0.2 }, 0)
-    .to(s, { t: 1, duration: 0.62, ease: 'power2.in', onUpdate: () => {
-      const t = s.t, cx = (px + ex) / 2, cy = Math.min(py, ey) - 140;
-      const bx = (1 - t) * (1 - t) * px + 2 * (1 - t) * t * cx + t * t * ex, by = (1 - t) * (1 - t) * py + 2 * (1 - t) * t * cy + t * t * ey;
-      const w = popW + (finalW - popW) * t;
-      gsap.set(fly, { width: w, x: bx - w / 2, y: by - w * 0.4, rotate: -8 + (spot.rot + 8) * t });
-    } }, 0.38);
+  const ex = tr.left + tr.width * spot.x, ey = tr.top + tr.height * spot.y - finalW * 0.2;
+  const px = clamp(sx + (narrow() ? 0 : 40), popW / 2, innerWidth - popW / 2), py = Math.max(sy - 90, popW / 2 + 60);
+  const cx = (px + ex) / 2 + (ex > px ? -60 : 60), cy = Math.min(py, ey) - 160; // bezier control point: a lob, not a slide
+  const s0 = r.width / popW, s1 = finalW / popW;
+  gsap.set(fly, { x: sx - popW / 2, y: sy - popW / 2, scale: s0, rotation: 0, opacity: 0.4, force3D: true });
+  const st = { t: 0 };
+  gsap.timeline({ onComplete: () => { fly.remove(); land(); } })
+    .to(fly, { x: px - popW / 2, y: py - popW / 2, scale: 1, rotation: -8, opacity: 1, duration: 0.5, ease: 'expo.out' })
+    .to(st, { t: 1, duration: 0.72, ease: 'power2.in', onUpdate: () => {
+      const t = st.t, u = 1 - t;
+      const bx = u * u * px + 2 * u * t * cx + t * t * ex, by = u * u * py + 2 * u * t * cy + t * t * ey;
+      const sc = 1 + (s1 - 1) * t, stretch = 1 + 0.12 * Math.sin(t * Math.PI); // stretch along the fall mid-flight
+      gsap.set(fly, { x: bx - popW / 2, y: by - popW / 2, scaleX: sc / Math.sqrt(stretch), scaleY: sc * stretch, rotation: -8 + (spot.rot + 8) * t });
+    } }, 0.42);
 }
 function removeOne(id) {
   if (!cart[id]) return; cart[id]--; if (!cart[id]) delete cart[id];
-  for (let i = trayEls.length - 1; i >= 0; i--) if (trayEls[i].id === id) { const { el } = trayEls[i]; trayEls.splice(i, 1); gsap.to(el, { y: -40, opacity: 0, scale: 0.6, duration: 0.3, onComplete: () => el.remove() }); break; }
+  for (let i = trayEls.length - 1; i >= 0; i--) if (trayEls[i].id === id) { const { el } = trayEls[i]; trayEls.splice(i, 1); gsap.to(el, { y: -40, opacity: 0, scale: 0.6, duration: 0.45, ease: 'power3.in', onComplete: () => el.remove() }); break; }
   renderOrder();
 }
 ring.addEventListener('click', e => {
   if ($('#menu3d').dataset.justDragged) return;
   const pnl = e.target.closest('.panel'); if (!pnl) return;
-  const b = e.target.closest('.it');
-  if (!pnl.classList.contains('front')) { const i = +pnl.dataset.i; const base = Math.round(cur); let diff = ((i - base) % P + P) % P; if (diff > P / 2) diff -= P; goTo(base + diff); return; }
-  if (!b) return;
-  b.classList.remove('hit'); void b.offsetWidth; b.classList.add('hit');
+  if (!pnl.classList.contains('front')) { glideTo(nearestIdx(+pnl.dataset.i)); return; }
+  const b = e.target.closest('.it'); if (!b) return;
+  gsap.fromTo(b, { backgroundColor: 'rgba(255,210,31,.32)' }, { backgroundColor: 'rgba(255,210,31,0)', duration: 0.8, ease: 'power2.out', clearProps: 'backgroundColor' });
   addItem(b.dataset.id, b.querySelector('.th img'));
 });
 renderOrder();
+const onScroll = () => { document.body.classList.toggle('scrolled', scrollY > 40 && walkP() >= 1); document.body.classList.toggle('at-foot', $('.foot').getBoundingClientRect().top < innerHeight * 0.85); };
+lenis.on('scroll', onScroll); onScroll();
 
-// order bar only when it's useful
-const onScroll = () => { document.body.classList.toggle('scrolled', scrollY > innerHeight * 0.8); document.body.classList.toggle('at-foot', $('.foot').getBoundingClientRect().top < innerHeight * 0.85); };
-addEventListener('scroll', onScroll, { passive: true }); onScroll();
-ScrollTrigger.create({ trigger: '#counter', start: 'top 60%', end: 'bottom 40%', onToggle: st => document.body.classList.toggle('at-counter', st.isActive) });
+/* ---------------- fried-to-order band: lazy cinematic loop ---------------- */
+{ const fv = $('#friedVid'); let set = false; new IntersectionObserver(es => { const on = es[0].isIntersecting; if (on && !set) { fv.src = MOBILE ? 'media/hero-fryer-sm.mp4' : 'media/hero-fryer.mp4'; set = true; } on ? fv.play().catch(() => {}) : fv.pause(); }, { rootMargin: '200px' }).observe(fv); }
 
-/* ---------------- atmosphere: steam, embers, lamp bloom (Three.js) ---------------- */
+/* ---------------- atmosphere at the counter: steam, embers, lamp bloom (Three.js) ---------------- */
 const fx = (() => {
-  const canvas = $('#fx'); const api = { puff() {} };
+  const canvas = $('#fx'); const api = { puff() {}, start() {}, stop() {} };
+  if (reduce) { canvas.remove(); return api; }
   let renderer; try { renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'low-power' }); } catch (e) { canvas.remove(); return api; }
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
-  const scene = new THREE.Scene(); let W = 1, H = 1; const cam = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
-  const tex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-  const smokes = []; const steamMat = () => new THREE.SpriteMaterial({ map: tex, color: 0xfff1dc, transparent: true, opacity: 0, depthWrite: false });
-  for (let i = 0; i < 46; i++) { const s = new THREE.Sprite(steamMat()); s.userData = { life: Math.random(), speed: 0.12 + Math.random() * 0.1, src: i % 3, drift: Math.random() * 6.28 }; scene.add(s); smokes.push(s); }
+  renderer.setPixelRatio(1); // soft particles don't need retina pixels
+  const scene = new THREE.Scene(); let W = 1, H = 1; const camO = new THREE.OrthographicCamera(0, 1, 1, 0, -10, 10);
+  const tex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const mat = () => new THREE.SpriteMaterial({ map: tex, color: 0xfff1dc, transparent: true, opacity: 0, depthWrite: false });
+  const smokes = []; for (let i = 0; i < (MOBILE ? 18 : 36); i++) { const s = new THREE.Sprite(mat()); s.userData = { life: Math.random(), speed: 0.1 + Math.random() * 0.08, src: i % 3, drift: Math.random() * 6.28 }; scene.add(s); smokes.push(s); }
   const puffs = [];
-  // embers / dust in warm light
-  const NE = 70, eg = new THREE.BufferGeometry(), ep = new Float32Array(NE * 3), ev = [];
-  for (let i = 0; i < NE; i++) { ep[i * 3] = Math.random(); ep[i * 3 + 1] = Math.random(); ep[i * 3 + 2] = 0; ev.push([(Math.random() - 0.5) * 0.01, 0.006 + Math.random() * 0.014, Math.random() * 6.28]); }
+  const NE = MOBILE ? 28 : 60, eg = new THREE.BufferGeometry(), ep = new Float32Array(NE * 3), ev = [];
+  for (let i = 0; i < NE; i++) { ep[i * 3] = Math.random(); ep[i * 3 + 1] = Math.random(); ev.push([0.006 + Math.random() * 0.012, Math.random() * 6.28]); }
   eg.setAttribute('position', new THREE.BufferAttribute(ep, 3));
-  const embers = new THREE.Points(eg, new THREE.PointsMaterial({ map: tex, color: 0xffc35a, size: 7, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: false }));
+  const embers = new THREE.Points(eg, new THREE.PointsMaterial({ map: tex, color: 0xffc35a, size: 6, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: false }));
   scene.add(embers);
-  // lamp bloom
-  const lamps = [[0.302, 0.035, 1], [0.405, 0.115, 0.8]].map(([x, y, k]) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffb347, transparent: true, opacity: 0.55 * k, blending: THREE.AdditiveBlending, depthWrite: false })); s.userData = { x, y, k }; scene.add(s); return s; });
-  // background "cover" mapping so effects sit on the right parts of the photo
-  const IMG = { w: 1152, h: 864 };
-  function map(u, v) { const s = Math.max(W / IMG.w, H / IMG.h) * 1.1; const dw = IMG.w * s, dh = IMG.h * s; return [(W - dw) / 2 + u * dw, (H - dh) / 2 + v * dh, s]; }
-  const sources = [[0.17, 0.36, 0.2], [0.42, 0.36, 0.16], [0.62, 0.34, 0.1]];
-  function resize() { const r = canvas.getBoundingClientRect(); W = r.width; H = r.height; renderer.setSize(W, H, false); cam.right = W; cam.top = H; cam.updateProjectionMatrix(); }
-  let visible = false, last = performance.now();
-  new IntersectionObserver(es => { visible = es[0].isIntersecting; if (visible) { last = performance.now(); requestAnimationFrame(loop); } }).observe(canvas);
+  // lamp positions in the final frame of the walk-in (u,v of the 4:3 frame)
+  const lamps = [[0.235, 0.13, 0.9], [0.535, 0.11, 1], [0.87, 0.09, 1]].map(([x, y, k]) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xffb347, transparent: true, opacity: 0.4 * k, blending: THREE.AdditiveBlending, depthWrite: false })); s.userData = { x, y, k }; scene.add(s); return s; });
+  const sources = [[0.44, 0.58, 0.06], [0.3, 0.56, 0.06], [0.62, 0.56, 0.06]];
+  function map(u, v) { const s = Math.max(W / 1440, H / 1080); const dw = 1440 * s, dh = 1080 * s; return [(W - dw) / 2 + u * dw, (H - dh) / 2 + v * dh, s]; }
+  function resize() { W = innerWidth; H = innerHeight; renderer.setSize(W, H, false); camO.right = W; camO.top = H; camO.updateProjectionMatrix(); }
   addEventListener('resize', resize); resize();
-  api.puff = (cx, cy) => {
-    const r = canvas.getBoundingClientRect(); const x = cx - r.left, y = cy - r.top;
-    for (let i = 0; i < 5; i++) { const s = new THREE.Sprite(steamMat()); s.userData = { x: x + (Math.random() - 0.5) * 40, y: y - 10, life: 0, sp: 0.6 + Math.random() * 0.5 }; scene.add(s); puffs.push(s); }
-  };
-  function loop(now) {
-    if (!visible) return; const dt = Math.min(0.05, (now - last) / 1000); last = now; const t = now / 1000;
+  let running = false, frame = 0, last = performance.now();
+  api.start = () => { if (running) return; running = true; canvas.classList.add('on'); last = performance.now(); gsap.ticker.add(loop); };
+  api.stop = () => { running = false; canvas.classList.remove('on'); gsap.ticker.remove(loop); };
+  api.puff = (cx, cy) => { for (let i = 0; i < (MOBILE ? 3 : 5); i++) { const s = new THREE.Sprite(mat()); s.userData = { x: cx + (Math.random() - 0.5) * 40, y: cy - 10, life: 0, sp: 0.6 + Math.random() * 0.5 }; scene.add(s); puffs.push(s); } };
+  function loop() {
+    frame++; if (MOBILE && frame % 2) return; // 30fps is plenty for drifting steam on phones
+    const now = performance.now(), dt = Math.min(0.06, (now - last) / 1000); last = now; const t = now / 1000;
     for (const s of smokes) {
       const d = s.userData; d.life += dt * d.speed; if (d.life > 1) { d.life = 0; d.drift = Math.random() * 6.28; }
       const [u, v, wv] = sources[d.src]; const [bx, by, sc] = map(u + Math.sin(d.drift) * wv * 0.5, v);
-      const rise = d.life * 300 * sc;
-      s.position.set(bx + Math.sin(t * 0.6 + d.drift) * 30 * d.life, H - (by - rise), 0);
-      const size = (80 + d.life * 260) * sc; s.scale.set(size, size, 1);
-      s.material.opacity = Math.sin(d.life * Math.PI) * 0.09;
+      s.position.set(bx + Math.sin(t * 0.6 + d.drift) * 30 * d.life, H - (by - d.life * 320 * sc), 0);
+      const size = (90 + d.life * 280) * sc; s.scale.set(size, size, 1); s.material.opacity = Math.sin(d.life * Math.PI) * 0.08;
     }
     for (let i = puffs.length - 1; i >= 0; i--) { const s = puffs[i], d = s.userData; d.life += dt * d.sp; if (d.life > 1) { scene.remove(s); s.material.dispose(); puffs.splice(i, 1); continue; } s.position.set(d.x + Math.sin(t * 2 + i) * 10 * d.life, H - (d.y - d.life * 140), 1); const z = 40 + d.life * 160; s.scale.set(z, z, 1); s.material.opacity = Math.sin(d.life * Math.PI) * 0.22; }
     const pa = eg.attributes.position.array;
-    for (let i = 0; i < NE; i++) { const v = ev[i]; pa[i * 3 + 1] += v[1] * dt * 3; pa[i * 3] += Math.sin(t + v[2]) * 0.0006; if (pa[i * 3 + 1] > 1) { pa[i * 3 + 1] = 0; pa[i * 3] = Math.random(); } }
+    for (let i = 0; i < NE; i++) { pa[i * 3 + 1] += ev[i][0] * dt * 3; pa[i * 3] += Math.sin(t + ev[i][1]) * 0.0006; if (pa[i * 3 + 1] > 1) { pa[i * 3 + 1] = 0; pa[i * 3] = Math.random(); } }
     eg.attributes.position.needsUpdate = true; embers.scale.set(W, H, 1);
-    for (const l of lamps) { const [x, y, sc] = map(l.userData.x, l.userData.y); l.position.set(x, H - y, 0); const z = 260 * sc * (1 + Math.sin(t * 3.1 + l.userData.k * 5) * 0.03); l.scale.set(z, z, 1); }
-    renderer.render(scene, cam); requestAnimationFrame(loop);
+    for (const l of lamps) { const [x, y, sc] = map(l.userData.x, l.userData.y); l.position.set(x, H - y, 0); const z = 240 * sc * (1 + Math.sin(t * 3.1 + l.userData.k * 5) * 0.03); l.scale.set(z, z, 1); }
+    renderer.render(scene, camO);
   }
   return api;
 })();
 
 /* ---------------- reveal-on-scroll for the info sections ---------------- */
-if (!reduce) $$('.solid .sec-title, .card, .mg, details, .shop figure').forEach(el => gsap.from(el, { y: 40, opacity: 0, duration: 0.8, ease: 'power3.out', scrollTrigger: { trigger: el, start: 'top 88%' } }));
+if (!reduce) $$('.solid .sec-title, .card, .mg, details, .shop figure, .fried-copy').forEach(el => gsap.from(el, { y: 50, opacity: 0, duration: 1.2, ease: 'expo.out', scrollTrigger: { trigger: el, start: 'top 90%' } }));
 
 /* ---------------- order flow (kept: modal, slots, validation, leads) ---------------- */
 const modal = $('#orderModal');
@@ -375,11 +426,11 @@ $('#wrapBtn').onclick = () => {
   $('#total2').textContent = gbp(total());
   $('#orderForm').hidden = false; $('#orderDone').hidden = true; fillSlots();
   blip('wrap'); buzz([10, 40, 10]);
-  if (!reduce) { gsap.to('.ti', { left: '50%', top: '42%', scale: 0.7, duration: 0.45, ease: 'power2.in', stagger: 0.02 }); gsap.fromTo('#trayWrap', { y: 0 }, { y: -14, yoyo: true, repeat: 1, duration: 0.3, delay: 0.45 }); }
-  setTimeout(() => { modal.hidden = false; $('#order').classList.remove('open'); if (!reduce) gsap.from('.sheet', { y: 60, opacity: 0, duration: 0.45, ease: 'power3.out' }); $('#fName').focus({ preventScroll: true }); }, reduce ? 0 : 750);
+  if (!reduce) { const tw = trayWrap.offsetWidth, th = trayWrap.offsetHeight; trayEls.forEach(({ el, spot }) => gsap.to(el, { x: (0.5 - spot.x) * tw, y: (0.42 - spot.y) * th, scale: 0.7, duration: 0.6, ease: 'power3.in' })); gsap.fromTo('#trayWrap', { y: 0 }, { y: -16, yoyo: true, repeat: 1, duration: 0.35, delay: 0.55, ease: 'power2.out' }); }
+  setTimeout(() => { modal.hidden = false; lenis.stop(); $('#order').classList.remove('open'); if (!reduce) gsap.from('.sheet', { y: 60, opacity: 0, duration: 0.45, ease: 'power3.out' }); $('#fName').focus({ preventScroll: true }); }, reduce ? 0 : 900);
 };
-function untuck() { trayEls.forEach(({ el }) => { const sp = { x: 0.24 + Math.random() * 0.56, y: 0.30 + Math.random() * 0.22 }; gsap.to(el, { left: sp.x * 100 + '%', top: sp.y * 100 + '%', scale: 1, duration: 0.5, ease: 'back.out(1.6)' }); }); }
-modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-close]')) { modal.hidden = true; untuck(); } });
+function untuck() { trayEls.forEach(({ el }) => gsap.to(el, { x: 0, y: 0, scale: 1, duration: 0.8, ease: 'expo.out' })); }
+modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-close]')) { modal.hidden = true; lenis.start(); untuck(); } });
 $('#sendBtn').onclick = async () => {
   const name = $('#fName').value.trim(), phone = $('#fPhone').value.trim(), post = $('#fPost').value.trim();
   const warn = m => { $('#warn').textContent = m; };
@@ -399,4 +450,4 @@ $('#sendBtn').onclick = async () => {
   } catch (e) { warn('Could not send just now. Please call the shop.'); }
   $('#sendBtn').disabled = false;
 };
-window.__yf = { cart, total, priceLines, addItem, goTo };
+window.__yf = { cart, total, priceLines, addItem, glideTo, lenis, arriveY, startAutoplay };
