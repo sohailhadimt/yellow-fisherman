@@ -1,0 +1,12 @@
+name = "yellow-fisherman-leads"
+main = "index.js"
+compatibility_date = "2026-11-01"
+[vars]
+ALLOWED_ORIGIN = "https://sohailhadimt.github.io"
+[[d1_databases]]
+binding = "DB"
+database_name = "yellow-fisherman-leads"
+database_id = "REPLACE_AFTER: wrangler d1 create yellow-fisherman-leads"
+# Then: wrangler d1 execute yellow-fisherman-leads --remote --file=schema.sql
+#       wrangler secret put OWNER_PASSCODE   (and optionally ALERT_WEBHOOK)
+#       wrangler deploy, then set API_BASE in ../config.js to the worker URL.

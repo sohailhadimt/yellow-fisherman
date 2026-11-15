@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en-GB"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<title>Owner dashboard · The Yellow Fisherman</title>
+<link rel="icon" href="assets/logo.webp">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0b1230;--y:#ffd21f;--line:rgba(255,255,255,.12)}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--navy);color:#fff7e0;font-family:Inter,system-ui,sans-serif;min-height:100vh}
+header{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}header img{width:40px;border-radius:50%;border:2px solid var(--y)}
+h1{font:400 26px Anton,Impact,sans-serif;text-transform:uppercase}.demo{margin-left:auto;background:var(--y);color:var(--navy);font-weight:800;font-size:11px;padding:5px 10px;border-radius:20px}
+.gate{max-width:360px;margin:12vh auto;padding:24px;border:1px solid var(--line);border-radius:20px;background:#121a40}
+.gate input{width:100%;padding:14px;border-radius:12px;border:1px solid var(--line);background:#0005;color:#fff;font:18px Inter;margin:12px 0;letter-spacing:.3em;text-align:center}
+button,.b{background:var(--y);color:var(--navy);border:0;border-radius:30px;padding:11px 18px;font:800 14px Inter;cursor:pointer;text-decoration:none;display:inline-block}
+.b.g{background:#ffffff14;color:#fff;border:1px solid var(--line)}
+.wrap{padding:20px;max-width:1200px;margin:auto}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:18px}
+.stat{background:#121a40;border:1px solid var(--line);border-radius:16px;padding:16px}.stat b{display:block;font:400 34px Anton,Impact;color:var(--y)}.stat span{font-size:12px;opacity:.7}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;padding:8px}td{padding:10px 8px;border-top:1px solid var(--line);vertical-align:top}
+td small{opacity:.7}select{background:#0005;color:#fff;border:1px solid var(--line);border-radius:8px;padding:6px}
+.st-New{color:var(--y);font-weight:800}a{color:var(--y)}
+@media(max-width:760px){thead{display:none}tr{display:block;border:1px solid var(--line);border-radius:14px;margin-bottom:10px;padding:6px}td{display:block;border:0;padding:4px 8px}}
+.note{font-size:12px;opacity:.7;margin-top:18px;line-height:1.5}
+</style></head><body>
+<header><img src="assets/logo.webp" alt=""><h1>Orders &amp; leads</h1><span class="demo" id="mode"></span></header>
+<div class="gate" id="gate"><h2 style="font:400 24px Anton;text-transform:uppercase">Owner sign-in</h2><p style="font-size:13px;opacity:.75;margin-top:6px" id="gateHint"></p><input id="pin" type="password" inputmode="numeric" placeholder="••••" autocomplete="current-password"><button id="go" style="width:100%">Sign in</button><p id="err" style="color:#ff9b8a;font-size:13px;margin-top:10px"></p></div>
+<div class="wrap" id="app" hidden>
+  <div class="stats"><div class="stat"><b id="sNew">0</b><span>New, waiting for a call</span></div><div class="stat"><b id="sToday">0</b><span>Requests today</span></div><div class="stat"><b id="sVal">£0</b><span>Value today</span></div><div class="stat"><b id="sAll">0</b><span>All time</span></div></div>
+  <div class="tools"><button id="refresh">Refresh</button><button class="b g" id="csv">Export CSV</button><button class="b g" id="test">Add test order</button><button class="b g" id="clear">Clear demo data</button><a class="b g" href="index.html">Back to site</a></div>
+  <table><thead><tr><th>When</th><th>Customer</th><th>Order</th><th>Total</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+  <p class="note" id="note"></p>
+</div>
+<script type="module">
+import { listLeads, updateLead, sendLead, clearDemo, isDemo } from './leads.js';
+const $ = s => document.querySelector(s);
+const DEMO_PIN = '2468';
+const demo = isDemo();
+$('#mode').textContent = demo ? 'DEMO MODE' : 'LIVE';
+$('#gateHint').textContent = demo ? 'Demo passcode: 2468. Demo mode shows requests made in this browser only.' : 'Enter the shop passcode.';
+let token = sessionStorage.getItem('yf_token') || '';
+async function enter() {
+  const p = $('#pin').value || token;
+  if (demo && p !== DEMO_PIN) { $('#err').textContent = 'Wrong passcode'; return; }
+  token = p; try { await load(); sessionStorage.setItem('yf_token', token); $('#gate').hidden = true; $('#app').hidden = false; } catch (e) { $('#err').textContent = e.message; }
+}
+$('#go').onclick = enter; $('#pin').onkeydown = e => e.key === 'Enter' && enter();
+if (token) enter();
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let leads = [];
+async function load() {
+  leads = await listLeads(token);
+  const today = new Date().toDateString(); const t = leads.filter(l => new Date(l.createdAt).toDateString() === today);
+  $('#sNew').textContent = leads.filter(l => l.status === 'New').length; $('#sToday').textContent = t.length;
+  $('#sVal').textContent = '£' + t.reduce((s, l) => s + (+l.total || 0), 0).toFixed(2); $('#sAll').textContent = leads.length;
+  $('#rows').innerHTML = leads.length ? leads.map(l => `<tr>
+    <td>${new Date(l.createdAt).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' })}<br><small>${esc(l.method)} · ${esc(l.when)}</small></td>
+    <td><b>${esc(l.name)}</b><br><a href="tel:${esc(l.phone)}">${esc(l.phone)}</a>${l.postcode ? '<br><small>' + esc(l.postcode) + '</small>' : ''}</td>
+    <td>${(l.items || []).map(esc).join('<br>')}${l.notes ? '<br><small>Note: ' + esc(l.notes) + '</small>' : ''}</td>
+    <td><b>£${(+l.total).toFixed(2)}</b></td>
+    <td><select data-id="${l.id}" class="st-${esc(l.status)}">${['New', 'Called', 'Cooking', 'Ready', 'Collected', 'Delivered', 'Cancelled'].map(s => `<option ${s === l.status ? 'selected' : ''}>${s}</option>`).join('')}</select></td></tr>`).join('') : '<tr><td colspan="5">No requests yet. Build a box on the site, or press "Add test order".</td></tr>';
+  $('#note').textContent = demo ? 'Demo backend: requests are stored in this browser (localStorage) so you can try the full flow. The live version stores them in a Cloudflare D1 database, so the shop sees every order on any phone, and sends a text or email alert for each new one.' : '';
+}
+$('#rows').addEventListener('change', async e => { const s = e.target.closest('select'); if (!s) return; await updateLead(token, s.dataset.id, { status: s.value }); load(); });
+$('#refresh').onclick = load;
+$('#test').onclick = async () => { await sendLead({ name: 'Test Customer', phone: '07700 900123', method: 'Collection', when: 'ASAP', items: ['Medium cod & chips (meal price) £11.80', 'Mushy peas £1.60', 'Salt, Vinegar'], total: 13.4, notes: 'Test order', source: 'dashboard test' }); load(); };
+$('#clear').onclick = () => { if (demo && confirm('Clear all demo requests in this browser?')) { clearDemo(); load(); } };
+$('#clear').hidden = !demo;
+$('#csv').onclick = () => {
+  const head = ['createdAt', 'status', 'name', 'phone', 'method', 'when', 'postcode', 'items', 'total', 'notes'];
+  const csv = [head.join(',')].concat(leads.map(l => head.map(k => '"' + String(k === 'items' ? (l.items || []).join(' | ') : l[k] ?? '').replace(/"/g, '""') + '"').join(','))).join('\n');
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'yellow-fisherman-orders.csv'; a.click();
+};
+setInterval(() => { if (!$('#app').hidden) load(); }, 20000);
+</script>
+</body></html>
