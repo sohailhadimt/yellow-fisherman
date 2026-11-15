@@ -74,7 +74,7 @@ body.autowalk .walk-ui .hint{opacity:0}
 /* the destination: counter UI over the final frame */
 .counter{position:absolute;inset:0;z-index:5;pointer-events:none}
 .counter.live{pointer-events:auto}
-.counter .menu3d,.counter .ring-nav,.counter .tray-wrap{pointer-events:inherit}
+.counter .menu3d,.counter .ring-nav{pointer-events:inherit}
 #fx{position:absolute;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;opacity:0;transition:opacity 1.2s}
 #fx.on{opacity:1}
 .counter-head{position:absolute;top:calc(var(--cb) + 74px);left:0;right:0;text-align:center;z-index:2;opacity:0}
@@ -117,17 +117,28 @@ body.autowalk .walk-ui .hint{opacity:0}
 .dots button{width:8px;height:8px;border-radius:99px;background:rgba(255,255,255,.3);transition:width .3s,background .3s}
 .dots button.on{width:26px;background:var(--y)}
 
-.tray-wrap{position:absolute;left:50%;bottom:clamp(96px,13vh,130px);width:min(440px,66vw);margin-left:calc(min(440px,66vw) / -2);z-index:5;transform-origin:50% 90%}
-.tray-img,.tray-front{width:100%;filter:drop-shadow(0 18px 24px rgba(0,0,0,.55))}
-.tray-front{position:absolute;inset:0;clip-path:polygon(0 47%,12% 46%,62% 64%,80% 64%,92% 44%,100% 32%,100% 100%,0 100%);z-index:3;filter:none}
-.tray-items{position:absolute;inset:0;z-index:2;pointer-events:none}
-.ti{position:absolute;filter:drop-shadow(0 8px 10px rgba(0,0,0,.45))}
-.tray-shadow{position:absolute;left:6%;right:6%;bottom:-6%;height:24%;background:radial-gradient(closest-side,rgba(0,0,0,.65),transparent);z-index:-1}
-.tray-hint{position:absolute;left:0;right:0;top:-26px;text-align:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--y);font-weight:700;text-shadow:0 2px 10px #000;transition:opacity .3s}
+.tray-stage{position:absolute;left:0;right:0;bottom:clamp(96px,13vh,130px);display:flex;justify-content:center;z-index:5;pointer-events:none}
+.tray-wrap{position:relative;width:min(400px,30vw);transform-origin:50% 90%;margin-right:7%}
+.tray-img,.tray-front{width:100%;display:block}
+.tray-img{filter:drop-shadow(0 16px 18px rgba(0,0,0,.5))}
+/* front lip, traced from the box photo: items tuck behind it */
+.tray-front{position:absolute;inset:0;z-index:3;clip-path:polygon(0 40%,11% 43.5%,23.3% 45.2%,36.7% 50.6%,53.3% 57.6%,72.2% 64%,82% 57%,89% 50%,95.6% 30.6%,100% 26.4%,100% 100%,0 100%)}
+.tray-items{position:absolute;inset:0;z-index:2}
+.tray-side{position:absolute;inset:0;z-index:4}
+.tray-badges{position:absolute;inset:0;z-index:6}
+.ts{position:absolute;will-change:transform}
+.ts img{width:100%;display:block;filter:drop-shadow(0 3px 3px rgba(0,0,0,.35))}
+.ts .cs{position:absolute;left:8%;right:8%;bottom:-6%;height:22%;border-radius:50%;background:radial-gradient(closest-side,rgba(40,24,6,.55),rgba(40,24,6,0));z-index:-1}
+.ts-drink .cs{left:-20%;right:-20%;bottom:-5%;height:12%;background:radial-gradient(closest-side,rgba(0,0,0,.7),rgba(0,0,0,0))}
+.qty{position:absolute;transform:translate(-50%,-50%) scale(0);min-width:26px;height:26px;padding:0 7px;border-radius:99px;background:#141006;color:var(--y);border:1.5px solid var(--y);font:800 12px/23px var(--sans);text-align:center;box-shadow:0 4px 12px rgba(0,0,0,.4);transition:transform .3s cubic-bezier(.34,1.56,.64,1)}
+.qty.on{transform:translate(-50%,-50%) scale(1)}
+.tray-glow{position:absolute;z-index:1;aspect-ratio:1.6;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(closest-side,rgba(255,226,120,.75),rgba(255,200,60,0));opacity:0;pointer-events:none;mix-blend-mode:screen}
+.tray-shadow{position:absolute;left:4%;right:2%;bottom:-5%;height:26%;background:radial-gradient(closest-side,rgba(0,0,0,.6),transparent);z-index:-1}
+.tray-hint{position:absolute;left:0;right:0;top:-30px;text-align:center;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--y);font-weight:700;text-shadow:0 2px 10px #000;transition:opacity .3s}
 .tray-hint.gone{opacity:0}
 .tray-hint.nudge{animation:nudge .8s}
 @keyframes nudge{25%,75%{transform:scale(1.15)}}
-.fly{position:fixed;left:0;top:0;z-index:80;pointer-events:none;filter:drop-shadow(0 20px 30px rgba(0,0,0,.55));will-change:transform;transform-origin:50% 50%}
+.fly{position:fixed;left:0;top:0;z-index:80;pointer-events:none;filter:drop-shadow(0 14px 16px rgba(0,0,0,.45));will-change:transform}
 
 /* floating order summary */
 .order{position:fixed;z-index:46;right:clamp(12px,3vw,36px);bottom:clamp(12px,3vh,30px);width:340px;border-radius:24px;padding:10px;display:grid;gap:8px;transform:translateY(140%);transition:transform .5s cubic-bezier(.2,.8,.2,1);background:linear-gradient(155deg,rgba(40,32,22,.72),rgba(14,11,8,.82))}
@@ -208,9 +219,9 @@ body.at-foot .order{transform:translateY(140%)}
   .counter-head h2{font-size:clamp(34px,3.6vw,52px)}
   .menu3d{top:calc(var(--cb) + 150px);height:440px}
   .ring-nav{top:auto;bottom:24px;left:clamp(18px,4vw,60px);transform:none}
-  .tray-wrap{bottom:26px;width:min(360px,30vw);margin-left:calc(min(360px,30vw) / -2)}
+  .tray-stage{bottom:22px}
 }
-@media (min-width:900px) and (max-height:860px){.menu3d{height:400px}.it{min-height:50px;padding:5px 6px}.th{height:38px}.tray-wrap{width:300px;margin-left:-150px;bottom:18px}}
+@media (min-width:900px) and (max-height:860px){.menu3d{height:400px}.it{min-height:50px;padding:5px 6px}.th{height:38px}.tray-wrap{width:min(340px,26vw)}}
 /* mobile */
 @media (max-width:899px){
   .nav nav a:not(.pill){display:none}
@@ -218,14 +229,15 @@ body.at-foot .order{transform:translateY(140%)}
   .wline{bottom:22vh}
   .counter-head{top:calc(var(--cb) + 62px)}
   .counter-head h2{font-size:30px}
-  .menu3d{top:calc(var(--cb) + 128px);height:400px}
-  .ring-nav{top:calc(var(--cb) + 128px + 400px - 4px)}
+  .menu3d{top:calc(var(--cb) + 124px);height:380px}
+  .ring-nav{top:calc(var(--cb) + 124px + 380px)}
   .panel-in{padding:12px 10px 6px;border-radius:22px}
   .ph h3{font-size:26px}
   .it{min-height:50px;grid-template-columns:46px 1fr auto 28px;gap:8px;padding:5px 4px}
   .th{width:46px;height:38px}
   .nm{font-size:14px}
-  .tray-wrap{bottom:94px;width:min(300px,70vw);margin-left:calc(min(300px,70vw) / -2)}
+  .tray-stage{bottom:84px}
+  .tray-wrap{width:min(310px,76vw);margin-right:11%}
   .order{left:10px;right:10px;width:auto;bottom:10px;grid-template-columns:1fr auto;align-items:center;padding:8px 8px 8px 6px;border-radius:22px}
   .order-top{padding:4px 8px}
   .order-top .tot{font-size:24px}

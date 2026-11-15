@@ -251,7 +251,6 @@ function preloadDishes() { if (dishesReady) return dishesReady; const set = new 
 
 /* ---------------- cart + real pricing ---------------- */
 const cart = {}; // id -> qty
-const trayEls = []; // {id, el, spot}
 const season = new Set(['Salt', 'Vinegar']);
 function priceLines() {
   let chipsLeft = cart.mchips || 0; const out = [];
@@ -270,7 +269,6 @@ const count = () => Object.values(cart).reduce((s, q) => s + q, 0);
 function renderOrder() {
   const lines = priceLines();
   $('#cnt').textContent = count();
-  $('#total').textContent = gbp(total());
   $('#lines').innerHTML = lines.length ? lines.map(l => `<div class="ln"><span class="q">${l.q}×</span><span class="n">${l.n}${l.meal ? '<small>meal price</small>' : ''}</span><b>${gbp(l.p)}</b><span class="qb"><button data-dec="${l.id}" data-meal="${l.meal ? 1 : ''}" aria-label="Remove one">−</button><button data-inc="${l.id}" data-meal="${l.meal ? 1 : ''}" aria-label="Add one">+</button></span></div>`).join('') : '<p class="muted">Your tray is empty. Tap a dish on the menu.</p>';
   $('#order').classList.toggle('has', count() > 0);
   $('#trayHint').classList.toggle('gone', count() > 0);
@@ -280,60 +278,116 @@ $('#season').innerHTML = '<span>Seasoning</span>' + SEASONING.map(s => `<button 
 $('#season').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const s = b.dataset.s; season.has(s) ? season.delete(s) : season.add(s); b.classList.toggle('on'); blip('pop'); };
 $('#lines').onclick = e => {
   const d = e.target.closest('[data-dec]'), i = e.target.closest('[data-inc]');
-  if (d) { removeOne(d.dataset.dec); if (d.dataset.meal) removeOne('mchips'); blip('pop'); buzz(8); }
+  if (d) { removeOne(d.dataset.dec); if (d.dataset.meal) removeOne('mchips'); buzz(8); }
   if (i) { addItem(i.dataset.inc, null); if (i.dataset.meal) addItem('mchips', null); }
 };
 $('#orderToggle').onclick = () => { $('#order').classList.toggle('open'); };
 
-const trayItems = $('#trayItems'), trayWrap = $('#trayWrap');
-function landingSpot() { const n = trayEls.length; return { x: 0.24 + ((n * 0.37 + Math.random() * 0.2) % 1) * 0.56, y: 0.30 + Math.random() * 0.22, rot: (Math.random() - 0.5) * 34 }; }
-function placeInTray(id, spot) {
-  const it = ITEMS[id]; const el = document.createElement('img');
-  el.src = `media/dish/${it.img}.webp`; el.alt = it.name; el.className = 'ti';
-  el.style.left = (spot.x * 100) + '%'; el.style.top = (spot.y * 100) + '%'; el.style.width = (it.size * 100) + '%'; el.style.zIndex = String(Math.round(spot.y * 100));
-  gsap.set(el, { xPercent: -50, yPercent: -70, rotation: spot.rot, transformOrigin: '50% 90%' });
-  trayItems.appendChild(el); trayEls.push({ id, el, spot });
-  return el;
+const trayItems = $('#trayItems'), trayWrap = $('#trayWrap'), traySide = $('#traySide'), trayBadges = $('#trayBadges'), trayGlow = $('#trayGlow');
+/* Fixed slot layout, in % of the box image (bottom-centre anchor). Mains lie along the long side,
+   chips sit in the right-hand end, sides tuck behind the front lip, drinks stand on the counter beside the box. */
+const SLOTS = {
+  main:  [{ x: 47, y: 53 }, { x: 58, y: 45 }, { x: 36, y: 46 }],
+  chips: [{ x: 76, y: 60 }, { x: 84, y: 50 }],
+  side:  [{ x: 25, y: 57 }, { x: 39, y: 62 }, { x: 58, y: 69 }, { x: 16, y: 51 }],
+  drink: [{ x: 107, y: 97 }, { x: 119, y: 97 }, { x: -7, y: 97 }],
+};
+const LOOK = { // width (% of box) and resting angle per dish picture
+  cod2: [36, 13], scampi: [25, 4], kebab: [29, 2], burger: [21, 0], fishcake: [16, 0],
+  chips: [22, 0], peas: [14, 0], curry: [14, 0], sausage: [30, 13], saveloy: [23, 10], gherkin: [12, 0], can: [11, 0],
+};
+const ASPECT = { burger: 518 / 640, can: 640 / 266, chips: 498 / 640, cod2: 372 / 640, curry: 586 / 640, fishcake: 472 / 640, gherkin: 503 / 640, kebab: 470 / 640, peas: 636 / 640, sausage: 334 / 640, saveloy: 465 / 640, scampi: 453 / 640 };
+const groupOf = it => it.img === 'can' ? 'drink' : it.img === 'chips' ? 'chips' : ['peas', 'curry', 'sausage', 'saveloy', 'gherkin', 'fishcake'].includes(it.img) ? 'side' : 'main';
+const placed = {}; // id -> {el, badge, slot, group}
+function freeSlot(group) {
+  const used = Object.values(placed).filter(p => p.group === group).map(p => p.idx);
+  for (let i = 0; i < SLOTS[group].length; i++) if (!used.includes(i)) return { idx: i, ...SLOTS[group][i] };
+  const n = used.length - SLOTS[group].length + 1, last = SLOTS[group][SLOTS[group].length - 1]; // overflow: stack neatly behind the last slot
+  return { idx: 100 + n, x: last.x - 3 * n, y: last.y - 4 * n };
 }
+function makeSlot(id) {
+  const it = ITEMS[id], g = groupOf(it), s = freeSlot(g), [w, r] = LOOK[it.img] || [18, 0];
+  const el = document.createElement('div'); el.className = 'ts ts-' + g;
+  el.innerHTML = `<i class="cs"></i><img src="media/dish/${it.img}.webp" alt="${it.name}">`;
+  Object.assign(el.style, { left: s.x + '%', top: s.y + '%', width: w + '%', zIndex: String(Math.round(s.y * 10)) });
+  gsap.set(el, { xPercent: -50, yPercent: -100, rotation: r, transformOrigin: '50% 100%' });
+  (g === 'drink' ? traySide : trayItems).appendChild(el);
+  const badge = document.createElement('b'); badge.className = 'qty'; Object.assign(badge.style, { left: (s.x + w * 0.42) + '%', top: (s.y - 6) + '%' }); trayBadges.appendChild(badge);
+  placed[id] = { el, badge, idx: s.idx, group: g, x: s.x, y: s.y, w, r, k: 1 };
+  relayout(g, id); return placed[id];
+}
+// more dishes in a group -> the group scales down a touch so nothing crowds
+function relayout(group, skip) {
+  const ps = Object.entries(placed).filter(([, p]) => p.group === group);
+  const n = ps.length, k = group === 'main' ? [1, 1, 0.88, 0.78][Math.min(n, 3)] : group === 'side' ? (n > 3 ? 0.88 : 1) : 1;
+  ps.forEach(([id, p]) => { p.k = k; if (id === skip) gsap.set(p.el, { scale: k }); else gsap.to(p.el, { scale: k, duration: 0.6, ease: 'power3.out' }); });
+}
+function slotPoint(p) { const tr = trayWrap.getBoundingClientRect(); return { x: tr.left + tr.width * p.x / 100, y: tr.top + tr.height * p.y / 100, w: tr.width * p.w / 100 * p.k }; }
+function paintBadge(id) { const p = placed[id]; if (!p) return; const q = cart[id] || 0; p.badge.textContent = q > 1 ? '×' + q : ''; p.badge.classList.toggle('on', q > 1); }
+function pulseSlot(p) {
+  Object.assign(trayGlow.style, { left: p.x + '%', top: (p.y - 4) + '%', width: (p.w * 1.5) + '%' });
+  gsap.fromTo(trayGlow, { opacity: 0, scale: 0.7 }, { opacity: 0.9, scale: 1, duration: 0.25, ease: 'power2.out', yoyo: true, repeat: 1, repeatDelay: 0.05 });
+}
+// one tasteful sound: a soft card-on-card "thock"
+function softLand() {
+  if (muted) return; const c = ac(); if (!c) return; const t = c.currentTime;
+  const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(240, t); o.frequency.exponentialRampToValueAtTime(120, t + 0.12);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.13, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18); o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.2);
+  const s = c.createBufferSource(); s.buffer = noiseBuf(c, 0.06, (w, i, n) => w * Math.pow(1 - i / n, 4)); const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 900; const g2 = c.createGain(); g2.gain.value = 0.08; s.connect(f); f.connect(g2); g2.connect(c.destination); s.start(t);
+}
+// the total ticks up rather than jumping
+const shownTotal = { v: 0 };
+function tickTotal() { gsap.to(shownTotal, { v: total(), duration: 0.5, ease: 'power2.out', overwrite: true, onUpdate: () => { $('#total').textContent = gbp(shownTotal.v); } }); }
+// one flight at a time; fast taps queue up
+const queue = []; let flying = false;
 function addItem(id, fromEl) {
   cart[id] = (cart[id] || 0) + 1;
-  const it = ITEMS[id]; const spot = landingSpot();
-  const tr = trayWrap.getBoundingClientRect();
+  const from = fromEl ? fromEl.getBoundingClientRect() : null;
+  queue.push({ id, from }); if (!flying) nextFlight();
+}
+function nextFlight() {
+  const job = queue.shift(); if (!job) { flying = false; return; } flying = true;
+  const { id, from } = job; const it = ITEMS[id];
+  const isNew = !placed[id]; const p = placed[id] || makeSlot(id);
   const land = () => {
-    const el = placeInTray(id, spot);
-    if (!reduce) {
-      // squash on impact, stretch back with a little wobble
-      gsap.fromTo(el, { scaleX: 1.28, scaleY: 0.72 }, { scaleX: 1, scaleY: 1, duration: 0.9, ease: 'elastic.out(1,0.38)' });
-      gsap.fromTo(trayWrap, { scaleY: 0.95, scaleX: 1.03 }, { scaleY: 1, scaleX: 1, duration: 0.9, ease: 'elastic.out(1,0.35)', transformOrigin: '50% 90%' });
-      gsap.fromTo('#total', { scale: 1.3, color: '#ffd21f' }, { scale: 1, color: '#fff', duration: 0.7, ease: 'power3.out' });
-    }
-    renderOrder(); blip('land'); buzz(14); fx.puff(tr.left + tr.width * spot.x, tr.top + tr.height * spot.y);
+    renderOrder(); paintBadge(id); tickTotal(); softLand(); buzz(10); pulseSlot(p);
+    if (!isNew) gsap.fromTo(p.el, { scale: p.k * 1.06 }, { scale: p.k, duration: 0.35, ease: 'power2.out' });
+    if (p.badge.classList.contains('on')) gsap.fromTo(p.badge, { scale: 1.4 }, { scale: 1, duration: 0.35, ease: 'back.out(2)' });
+    nextFlight();
   };
-  if (!fromEl || reduce) { land(); return; }
-  blip('pop'); buzz(8);
-  const r = fromEl.getBoundingClientRect();
-  const popW = Math.min(innerWidth * 0.5, 300) * (0.6 + it.size), finalW = tr.width * it.size;
-  const fly = document.createElement('img'); fly.src = `media/dish/${it.img}.webp`; fly.className = 'fly'; fly.style.width = popW + 'px'; document.body.appendChild(fly);
-  const sx = r.left + r.width / 2, sy = r.top + r.height / 2;
-  const ex = tr.left + tr.width * spot.x, ey = tr.top + tr.height * spot.y - finalW * 0.2;
-  const px = clamp(sx + (narrow() ? 0 : 40), popW / 2, innerWidth - popW / 2), py = Math.max(sy - 90, popW / 2 + 60);
-  const cx = (px + ex) / 2 + (ex > px ? -60 : 60), cy = Math.min(py, ey) - 160; // bezier control point: a lob, not a slide
-  const s0 = r.width / popW, s1 = finalW / popW;
-  gsap.set(fly, { x: sx - popW / 2, y: sy - popW / 2, scale: s0, rotation: 0, opacity: 0.4, force3D: true });
+  if (reduce || !from) {
+    if (isNew) gsap.fromTo(p.el, { opacity: 0, y: -14 }, { opacity: 1, y: 0, duration: reduce ? 0 : 0.35, ease: 'power3.out' });
+    land(); return;
+  }
+  if (isNew) { gsap.set(p.el, { opacity: 0 }); gsap.set(p.el.querySelector('.cs'), { opacity: 0, scaleX: 0.4 }); }
+  const sp = slotPoint(p);
+  const fly = document.createElement('img'); fly.src = `media/dish/${it.img}.webp`; fly.className = 'fly'; fly.style.width = sp.w + 'px'; document.body.appendChild(fly);
+  const h = sp.w * (ASPECT[it.img] || 0.75);
+  const s0 = from.width / sp.w;
+  const ax = from.left + from.width / 2, ay = from.top + from.height / 2 + (h * s0) / 2; // bottom-centre of the thumbnail
+  const lift = { x: ax, y: ay - 22 };
+  const c = { x: (lift.x + sp.x) / 2, y: Math.min(lift.y, sp.y) - Math.max(80, Math.abs(sp.y - lift.y) * 0.35) }; // gentle lob
+  const put = (x, y, sc, rot) => gsap.set(fly, { x: x - sp.w / 2, y: y - h, scale: sc, rotation: rot, transformOrigin: '50% 100%', force3D: true });
+  put(ax, ay, s0, 0);
   const st = { t: 0 };
-  gsap.timeline({ onComplete: () => { fly.remove(); land(); } })
-    .to(fly, { x: px - popW / 2, y: py - popW / 2, scale: 1, rotation: -8, opacity: 1, duration: 0.5, ease: 'expo.out' })
-    .to(st, { t: 1, duration: 0.72, ease: 'power2.in', onUpdate: () => {
+  const tl = gsap.timeline({ onComplete: () => { if (isNew) gsap.set(p.el, { opacity: 1 }); fly.remove(); land(); } });
+  tl.to(fly, { y: `-=22`, scale: s0 * 1.12, duration: 0.16, ease: 'power2.out' })
+    .to(st, { t: 1, duration: 0.42, ease: 'power3.inOut', onUpdate: () => {
       const t = st.t, u = 1 - t;
-      const bx = u * u * px + 2 * u * t * cx + t * t * ex, by = u * u * py + 2 * u * t * cy + t * t * ey;
-      const sc = 1 + (s1 - 1) * t, stretch = 1 + 0.12 * Math.sin(t * Math.PI); // stretch along the fall mid-flight
-      gsap.set(fly, { x: bx - popW / 2, y: by - popW / 2, scaleX: sc / Math.sqrt(stretch), scaleY: sc * stretch, rotation: -8 + (spot.rot + 8) * t });
-    } }, 0.42);
+      const x = u * u * lift.x + 2 * u * t * c.x + t * t * sp.x, y = u * u * lift.y + 2 * u * t * c.y + t * t * (sp.y - 10);
+      put(x, y, s0 * 1.12 + (1 - s0 * 1.12) * t, p.r * t - 6 * Math.sin(t * Math.PI));
+    } })
+    .to(fly, { y: `+=10`, duration: 0.16, ease: 'back.out(1.4)' })
+    .to(isNew ? p.el.querySelector('.cs') : {}, { opacity: 1, scaleX: 1, duration: 0.3, ease: 'power2.out' }, 0.42);
 }
 function removeOne(id) {
-  if (!cart[id]) return; cart[id]--; if (!cart[id]) delete cart[id];
-  for (let i = trayEls.length - 1; i >= 0; i--) if (trayEls[i].id === id) { const { el } = trayEls[i]; trayEls.splice(i, 1); gsap.to(el, { y: -40, opacity: 0, scale: 0.6, duration: 0.45, ease: 'power3.in', onComplete: () => el.remove() }); break; }
-  renderOrder();
+  if (!cart[id]) return; cart[id]--;
+  const p = placed[id];
+  if (!cart[id]) {
+    delete cart[id];
+    if (p) { delete placed[id]; p.badge.remove(); gsap.to(p.el, { y: -36, opacity: 0, duration: 0.42, ease: 'power3.in', onComplete: () => p.el.remove() }); relayout(p.group); }
+  } else paintBadge(id);
+  renderOrder(); tickTotal();
 }
 ring.addEventListener('click', e => {
   if ($('#menu3d').dataset.justDragged) return;
@@ -421,15 +475,15 @@ function fillSlots() { $('#fTime').innerHTML = slots().map(([v, l]) => `<option 
 $$('#method button').forEach(b => b.onclick = () => { method = b.dataset.m; $$('#method button').forEach(x => x.classList.toggle('on', x === b)); $('.del-only').hidden = method !== 'Delivery'; fillSlots(); $('#warn').textContent = ''; });
 const seasonTxt = () => season.size ? 'Seasoning: ' + [...season].join(', ') : 'No seasoning';
 $('#wrapBtn').onclick = () => {
-  if (count() <= 0) { gsap.fromTo('#trayWrap', { x: -10 }, { x: 0, duration: 0.5, ease: 'elastic.out(1,0.3)' }); $('#trayHint').classList.add('nudge'); setTimeout(() => $('#trayHint').classList.remove('nudge'), 900); return; }
+  if (count() <= 0) { gsap.fromTo('#trayWrap', { x: -8 }, { x: 0, duration: 0.6, ease: 'power3.out' }); $('#trayHint').classList.add('nudge'); setTimeout(() => $('#trayHint').classList.remove('nudge'), 900); return; }
   $('#miniSum').innerHTML = priceLines().map(l => `${l.q}× ${l.n} · ${gbp(l.p)}`).join('<br>') + `<br><span class="muted">${seasonTxt()}</span><br><b>Total ${gbp(total())}</b>`;
   $('#total2').textContent = gbp(total());
   $('#orderForm').hidden = false; $('#orderDone').hidden = true; fillSlots();
   blip('wrap'); buzz([10, 40, 10]);
-  if (!reduce) { const tw = trayWrap.offsetWidth, th = trayWrap.offsetHeight; trayEls.forEach(({ el, spot }) => gsap.to(el, { x: (0.5 - spot.x) * tw, y: (0.42 - spot.y) * th, scale: 0.7, duration: 0.6, ease: 'power3.in' })); gsap.fromTo('#trayWrap', { y: 0 }, { y: -16, yoyo: true, repeat: 1, duration: 0.35, delay: 0.55, ease: 'power2.out' }); }
+  if (!reduce) gsap.fromTo('#trayWrap', { y: 0 }, { y: -12, yoyo: true, repeat: 1, duration: 0.4, ease: 'power2.inOut' });
   setTimeout(() => { modal.hidden = false; lenis.stop(); $('#order').classList.remove('open'); if (!reduce) gsap.from('.sheet', { y: 60, opacity: 0, duration: 0.45, ease: 'power3.out' }); $('#fName').focus({ preventScroll: true }); }, reduce ? 0 : 900);
 };
-function untuck() { trayEls.forEach(({ el }) => gsap.to(el, { x: 0, y: 0, scale: 1, duration: 0.8, ease: 'expo.out' })); }
+function untuck() {}
 modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('[data-close]')) { modal.hidden = true; lenis.start(); untuck(); } });
 $('#sendBtn').onclick = async () => {
   const name = $('#fName').value.trim(), phone = $('#fPhone').value.trim(), post = $('#fPost').value.trim();
@@ -450,4 +504,4 @@ $('#sendBtn').onclick = async () => {
   } catch (e) { warn('Could not send just now. Please call the shop.'); }
   $('#sendBtn').disabled = false;
 };
-window.__yf = { cart, total, priceLines, addItem, glideTo, lenis, arriveY, startAutoplay };
+window.__yf = { placed, cart, total, priceLines, addItem, glideTo, lenis, arriveY, startAutoplay };
