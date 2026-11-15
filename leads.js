@@ -1,4 +1,4 @@
-import { API_BASE } from './config.js';
+import { API_BASE } from './config.js?v=4';
 const KEY = 'yf_leads_demo';
 export const isDemo = () => !API_BASE;
 export async function sendLead(lead) {

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { BIZ, PANELS, SEASONING, REVIEWS, MENU_LIST } from './config.js';
-import { sendLead, isDemo } from './leads.js';
+import { BIZ, PANELS, SEASONING, REVIEWS, MENU_LIST } from './config.js?v=4';
+import { sendLead, isDemo } from './leads.js?v=4';
 
 const gsap = window.gsap, ScrollTrigger = window.ScrollTrigger;
 gsap.registerPlugin(ScrollTrigger);
@@ -14,6 +14,9 @@ const MOBILE = narrow() || matchMedia('(pointer:coarse)').matches;
 const loaderBar = $('#loader .bar i');
 loaderBar.style.width = '25%';
 if (MOBILE) document.documentElement.classList.add('lite');
+// size the stage to the *visible* viewport (iOS toolbars), not the layout viewport
+const setVH = () => { const h = (window.visualViewport && visualViewport.height) || innerHeight; document.documentElement.style.setProperty('--vh', Math.round(h) + 'px'); const ob = document.getElementById('order'); if (ob) document.documentElement.style.setProperty('--orderH', ob.offsetHeight + 'px'); let ph = 0; document.querySelectorAll('.panel-in').forEach(pi => { const it = pi.querySelector('.items'); if (it) ph = Math.max(ph, pi.offsetHeight - it.clientHeight + it.scrollHeight); }); if (ph) document.documentElement.style.setProperty('--panelH', Math.ceil(ph + 2) + 'px'); };
+setVH(); addEventListener('resize', setVH); if (window.visualViewport) visualViewport.addEventListener('resize', setVH); addEventListener('orientationchange', () => setTimeout(setVH, 250));
 
 /* ---------------- smooth scroll (Lenis) driven by GSAP's ticker ---------------- */
 const lenis = new window.Lenis({ lerp: reduce ? 1 : 0.085, smoothWheel: !reduce, wheelMultiplier: 0.9, touchMultiplier: 1.4 });
@@ -190,7 +193,7 @@ const ring = $('#ring');
 ring.innerHTML = PANELS.map((p, i) => `
   <div class="panel" data-i="${i}"><div class="bob" style="animation-delay:${-i * 0.9}s"><div class="glass panel-in">
     <div class="ph"><span class="pn">0${i + 1}</span><h3>${p.title}</h3></div>
-    <div class="items">${p.items.map(it => `
+    <div class="items" data-lenis-prevent>${p.items.map(it => `
       <button class="it" data-id="${it.id}">
         <span class="th"><img src="media/dish/${it.img}.webp" alt="" decoding="async"></span>
         <span class="nm">${it.name}${it.withChips ? `<small>with chips ${gbp(it.withChips)}</small>` : it.note ? `<small>${it.note}</small>` : ''}</span>
@@ -218,7 +221,8 @@ $('#prevP').onclick = () => { glideTo(Math.round(cur) - 1); blip('pop'); };
 $('#nextP').onclick = () => { glideTo(Math.round(cur) + 1); blip('pop'); };
 $$('#dots button').forEach(d => d.onclick = () => glideTo(nearestIdx(+d.dataset.i)));
 addEventListener('resize', () => { measure(); layoutRing(); });
-measure(); layoutRing();
+if (window.visualViewport) visualViewport.addEventListener('resize', () => { measure(); layoutRing(); });
+measure(); layoutRing(); setVH();
 {
   const m = $('#menu3d'); let sx = null, sy = 0, start = 0, dragging = false, samples = [];
   m.addEventListener('pointerdown', e => { sx = e.clientX; sy = e.clientY; start = cur; dragging = false; samples = [[performance.now(), e.clientX]]; gsap.killTweensOf(rs); });
