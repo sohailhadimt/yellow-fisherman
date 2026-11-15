@@ -18,34 +18,41 @@ export const BIZ = {
   delivery: { radiusMiles: 8.5, minOrder: 13, feeFrom: 1, feeTo: 6, collectMins: '10–25', deliverMins: '30–90' },
 };
 
-// Builder items. kind drives the 3D model. price in GBP.
-export const MENU = {
-  fish: [
-    { id: 'mcod', name: 'Medium cod', price: 8.00, withChips: 11.80, kind: 'fish', scale: 1.0 },
-    { id: 'lcod', name: 'Large cod', price: 10.00, withChips: 13.80, kind: 'fish', scale: 1.22 },
-    { id: 'haddock', name: 'Haddock', price: 10.50, withChips: 12.80, kind: 'fish', scale: 1.1 },
-    { id: 'plaice', name: 'Plaice', price: 9.00, withChips: 12.80, kind: 'fish', scale: 1.05, flat: true },
-    { id: 'scampi', name: 'Scampi (12)', price: 7.00, withChips: 10.80, kind: 'scampi' },
-    { id: 'fishcake', name: 'Fish cake', price: 3.50, kind: 'cake' },
-  ],
-  chips: [
-    { id: 'none', name: 'No chips', price: 0, count: 0 },
-    { id: 'mchips', name: 'Medium chips', price: 3.80, count: 30 },
-    { id: 'lchips', name: 'Large chips', price: 5.50, count: 44 },
-    { id: 'cheesy', name: 'Cheesy chips', price: 5.00, count: 30, cheese: true },
-  ],
-  extras: [
-    { id: 'peas', name: 'Mushy peas', price: 1.60, kind: 'peas' },
-    { id: 'curry', name: 'Curry sauce', price: 1.60, kind: 'curry' },
-    { id: 'sausage', name: 'Jumbo battered sausage', price: 3.50, kind: 'sausage' },
-    { id: 'saveloy', name: 'Saveloy', price: 3.30, kind: 'saveloy' },
-    { id: 'gherkin', name: 'Pickled gherkin', price: 1.00, kind: 'gherkin' },
-    { id: 'onion', name: 'Pickled onion', price: 1.00, kind: 'onion' },
-    { id: 'mars', name: 'Battered Mars bar', price: 2.20, kind: 'mars' },
-    { id: 'can', name: 'Can of drink', price: 1.50, kind: 'can' },
-  ],
-  seasoning: ['Salt', 'Vinegar', 'Onion vinegar'], // free, from the shop's own options
-};
+// Counter menu panels: real prices from the shop's own online menu (read 15 Nov 2026).
+// img = generated photoreal dish cut-out in media/dish. withChips = the shop's own meal price
+// when that fish is ordered with medium chips.
+export const PANELS = [
+  { id: 'fish', title: 'Fish', items: [
+    { id: 'mcod', name: 'Medium cod', price: 8.00, withChips: 11.80, img: 'cod2', size: 0.5 },
+    { id: 'lcod', name: 'Large cod', price: 10.00, withChips: 13.80, img: 'cod2', size: 0.58 },
+    { id: 'haddock', name: 'Haddock', price: 10.50, withChips: 12.80, img: 'cod2', size: 0.54 },
+    { id: 'plaice', name: 'Plaice', price: 9.00, withChips: 12.80, img: 'cod2', size: 0.52 },
+    { id: 'scampi', name: 'Scampi (12)', price: 7.00, withChips: 10.80, img: 'scampi', size: 0.36 },
+    { id: 'fishcake', name: 'Fish cake', price: 3.50, img: 'fishcake', size: 0.24 },
+  ]},
+  { id: 'chips', title: 'Chips', items: [
+    { id: 'mchips', name: 'Medium chips', price: 3.80, img: 'chips', size: 0.34 },
+    { id: 'lchips', name: 'Large chips', price: 5.50, img: 'chips', size: 0.4 },
+    { id: 'cheesy', name: 'Cheesy chips', price: 5.00, img: 'chips', size: 0.34 },
+  ]},
+  { id: 'sides', title: 'Sides', items: [
+    { id: 'peas', name: 'Mushy peas', price: 1.60, img: 'peas', size: 0.2 },
+    { id: 'curry', name: 'Curry sauce', price: 1.60, img: 'curry', size: 0.2 },
+    { id: 'sausage', name: 'Jumbo battered sausage', price: 3.50, img: 'sausage', size: 0.42 },
+    { id: 'saveloy', name: 'Saveloy', price: 3.30, img: 'saveloy', size: 0.3 },
+    { id: 'gherkin', name: 'Pickled gherkin', price: 1.00, img: 'gherkin', size: 0.22 },
+  ]},
+  { id: 'kebab', title: 'Kebabs & burgers', items: [
+    { id: 'donerm', name: 'Lamb doner (medium)', price: 8.20, img: 'kebab', size: 0.4 },
+    { id: 'donerl', name: 'Lamb doner (large)', price: 10.00, img: 'kebab', size: 0.46 },
+    { id: 'qpc', name: '1/4 pounder with cheese', price: 5.70, img: 'burger', size: 0.3 },
+    { id: 'hpc', name: '1/2 pounder with cheese', price: 7.20, img: 'burger', size: 0.34 },
+  ]},
+  { id: 'drinks', title: 'Drinks', items: [
+    { id: 'can', name: 'Can of drink', price: 1.50, img: 'can', size: 0.12, note: 'Coke, Diet Coke, Fanta, 7up, Dr Pepper, Rio or Strawberry Mirinda' },
+  ]},
+];
+export const SEASONING = ['Salt', 'Vinegar', 'Onion vinegar']; // free, from the shop's own options
 
 // Real customer words. Source noted on each. Do not edit the wording.
 export const REVIEWS = [

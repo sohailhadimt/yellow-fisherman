@@ -6,65 +6,65 @@
 <meta name="robots" content="noindex, nofollow, noarchive">
 <title>The Yellow Fisherman · Concept preview</title>
 <meta name="description" content="Concept preview of a new interactive website for The Yellow Fisherman, Ashford, Kent.">
-<meta name="theme-color" content="#0b1230">
+<meta name="theme-color" content="#0d0b09">
 <link rel="icon" href="assets/logo.webp">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+<link rel="preload" as="image" href="media/hero-poster.webp">
 <link rel="stylesheet" href="style.css">
 <script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 </head>
 <body>
 <div class="concept">Concept preview · not the official site · <a href="https://theyellowfisherman.com/" rel="nofollow">order at theyellowfisherman.com</a></div>
 
-<div id="loader"><div class="loader-inner"><img src="assets/logo.webp" alt=""><div class="bar"><i></i></div><p>Heating the fryer…</p></div></div>
-
-<canvas id="stage" aria-hidden="true"></canvas>
-<div id="fallback" hidden><img src="assets/cover-1024.webp" alt="The Yellow Fisherman shopfront at night"></div>
+<div id="loader"><div class="loader-inner"><img src="assets/logo.webp" alt=""><div class="bar"><i></i></div><p>Heating the fryers…</p></div></div>
 
 <header class="nav">
   <a class="brand" href="#top"><img src="assets/logo.webp" alt="The Yellow Fisherman logo"><span>The Yellow Fisherman</span></a>
-  <nav><a href="#build">Build</a><a href="#menu">Menu</a><a href="#reviews">Reviews</a><a class="pill" data-tel href="#">Call</a></nav>
+  <nav><a href="#counter">Order</a><a href="#menu">Menu</a><a href="#reviews">Reviews</a><button class="snd" id="sndBtn" aria-label="Sound on or off">🔈</button><a class="pill" data-tel href="#">Call</a></nav>
 </header>
 
 <main>
   <section id="top" class="hero">
-    <p class="kicker">Fish &amp; chips · Kebabs · Pizza · Ram Lane, Ashford</p>
-    <h1 class="mega"><span>The</span><span class="y">Yellow</span><span>Fisherman</span></h1>
-    <p class="sub">Golden cod, proper chips, wrapped hot.</p>
-    <div class="hero-cta"><a href="#build" class="btn primary">Build your box</a><a data-tel href="#" class="btn ghost">Call the shop</a></div>
-    <div class="rating-chip"><b data-rating>4.0</b> ★ on Google · <span data-reviews>303</span> reviews</div>
-    <div class="scroll-cue">Scroll</div>
+    <video id="heroVid" class="hero-vid" muted playsinline loop autoplay preload="auto" poster="media/hero-poster.webp"></video>
+    <div class="hero-shade"></div>
+    <div class="hero-copy">
+      <p class="kicker">Fish &amp; chips · Kebabs · Burgers · Ram Lane, Ashford</p>
+      <h1 class="mega"><span>Fried</span><span class="y">fresh.</span><span>Wrapped hot.</span></h1>
+      <p class="sub">The Yellow Fisherman. Golden cod, proper chips and doner, cooked to order on Maidstone Road.</p>
+      <div class="hero-cta"><a href="#walk" class="btn primary" id="walkBtn">Walk in &amp; order</a><a data-tel href="#" class="btn ghost">Call the shop</a></div>
+      <div class="rating-chip"><b data-rating>4.0</b> ★ on Google · <span data-reviews>303</span> reviews</div>
+    </div>
+    <div class="scroll-cue"><i></i>Scroll to walk in</div>
   </section>
 
-  <section class="story" id="s-fryer">
-    <h2 class="line">Fresh cod.</h2>
-    <h2 class="line y">Into the fryer.</h2>
-    <h2 class="line">Out golden.</h2>
+  <section id="walk" class="walk">
+    <div class="walk-stage" id="walkStage">
+      <canvas id="walkCanvas"></canvas>
+      <div class="walk-vignette"></div>
+      <div class="wline" data-at="0.04"><span class="k">Tutt Hill House · Maidstone Road</span><b>Come on in.</b></div>
+      <div class="wline" data-at="0.42"><b>The fryers are on.</b></div>
+      <div class="wline" data-at="0.78"><b class="y">Step up to the counter.</b></div>
+      <button class="hotspot" id="hotspot"><i></i><span>Tap to walk in</span></button>
+      <div class="walk-hint">Scroll to walk · drag to look around</div>
+    </div>
   </section>
 
-  <section class="story" id="s-wrap">
-    <h2 class="line">Salt.</h2>
-    <h2 class="line">Vinegar.</h2>
-    <h2 class="line y">Wrapped hot.</h2>
-    <p class="story-note">Collection ready in about <span data-collect>10–25</span> minutes.</p>
-  </section>
-
-  <section id="build" class="build">
-    <div class="drag-zone" id="dragZone" aria-label="Drag to turn the box, tap to shake"></div>
-    <div class="build-head"><h2>Build your box</h2><p>Tap to drop it in. Drag the box to spin it.</p></div>
-    <div class="panel glass" id="builder">
-      <div class="tabs" role="tablist">
-        <button class="tab on" data-tab="fish">Fish</button>
-        <button class="tab" data-tab="chips">Chips</button>
-        <button class="tab" data-tab="extras">Extras</button>
-        <button class="tab" data-tab="season">Season</button>
-      </div>
-      <div class="opts" id="opts"></div>
-      <div class="summary">
+  <section id="counter" class="counter">
+    <div class="counter-bg" id="counterBg"></div>
+    <canvas id="fx" aria-hidden="true"></canvas>
+    <div class="counter-head"><p class="kicker">At the counter</p><h2>What can we get you?</h2></div>
+    <div class="menu3d" id="menu3d"><div class="ring" id="ring"></div></div>
+    <div class="ring-nav"><button id="prevP" aria-label="Previous menu">‹</button><div class="dots" id="dots"></div><button id="nextP" aria-label="Next menu">›</button></div>
+    <div class="tray-wrap" id="trayWrap"><div class="tray-shadow"></div><img class="tray-img" src="media/dish/tray.webp" alt="Your order tray"><div class="tray-items" id="trayItems"></div><img class="tray-front" src="media/dish/tray.webp" alt=""><p class="tray-hint" id="trayHint">Tap a dish. It lands here.</p></div>
+    <div class="order glass" id="order">
+      <button class="order-top" id="orderToggle"><span><b id="cnt">0</b> items</span><span class="tot" id="total">£0.00</span><span class="chev">⌃</span></button>
+      <div class="order-body" id="orderBody">
         <div class="lines" id="lines"></div>
-        <button class="btn primary wrap-btn" id="wrapBtn">Wrap it up · <b id="total">£0.00</b></button>
+        <div class="season" id="season"></div>
       </div>
+      <button class="btn primary wrap-btn" id="wrapBtn">Wrap it up</button>
     </div>
   </section>
 
@@ -82,14 +82,14 @@
 
   <section id="faq" class="faq solid">
     <h2 class="sec-title">Before you order</h2>
-    <details><summary>Do you deliver?</summary><p>Yes, up to <span data-radius>8.5</span> miles. Minimum order £13. Delivery is £1 up to 3.5 miles, rising to £6 at 8.5 miles.</p></details>
+    <details><summary>Do you deliver?</summary><p>Yes, up to 8.5 miles. Minimum order £13. Delivery is £1 up to 3.5 miles, rising to £6 at 8.5 miles.</p></details>
     <details><summary>How long for collection?</summary><p>Usually <span data-collect>10–25</span> minutes. Deliveries take about 30–90 minutes depending on how busy we are.</p></details>
     <details><summary>When are you open?</summary><div class="hours" id="hoursFaq"></div><p class="muted">Online orders close at 9:45pm.</p></details>
     <details><summary>Is there a kids' menu?</summary><p>Yes: sausage, nuggets, cod bites, cheeseburger or doner meat, each with chips.</p></details>
   </section>
 
   <section class="shop solid">
-    <figure><img loading="lazy" src="assets/cover-1024.webp" alt="The Yellow Fisherman shopfront lit up at night"></figure>
+    <figure><img loading="lazy" src="assets/cover-1024.webp" alt="The Yellow Fisherman shopfront lit up at night"><figcaption>Find us on Maidstone Road, Ram Lane.</figcaption></figure>
   </section>
 </main>
 
@@ -101,7 +101,7 @@
     <div><h4>Opening hours</h4><div class="hours" id="hoursFoot"></div></div>
     <div><h4>Order</h4><p><a href="https://theyellowfisherman.com/" rel="nofollow">Order online</a><br><a data-fb href="#" rel="nofollow">Facebook</a><br><a href="dashboard.html">Owner login</a></p></div>
   </div>
-  <p class="tiny">Concept preview built for The Yellow Fisherman. Not the official website. Reviews quoted from public Google and review-site listings.</p>
+  <p class="tiny">Concept preview built for The Yellow Fisherman. Not the official website. Food, walk-in and fryer imagery is illustrative until replaced with the shop's own photos and footage. Reviews quoted from public Google and review-site listings.</p>
 </footer>
 
 <div class="modal" id="orderModal" hidden>
